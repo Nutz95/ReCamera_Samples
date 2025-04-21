@@ -1,17 +1,21 @@
+#include <fstream>
 #include <opencv2/opencv.hpp>
+#include <stdexcept>
+#include <string>
 #include <sys/stat.h>
 #include <unistd.h>
 namespace cv2 = cv;
 
 #include "image_preprocessor.h"
+#include "led.h"
 
 namespace ma::node {
 
 #define CURRENT_CHANNEL CHN_JPEG  // CHN_JPEG, CHN_RAW, CHN_H264
-#define RES_WIDTH       1920      // 2592 // 1920
-#define RES_HEIGHT      1080      // 1944 //1080
+#define RES_WIDTH       1920      // Configuration pour résolution 1080p
+#define RES_HEIGHT      1080      // Configuration pour résolution 1080p
 #define JPEG_QUALITY    100
-#define FPS             30
+#define FPS             10  // FPS standard pour 1080p
 
 static constexpr char TAG[] = "ma::node::image_preprocessor";
 
@@ -159,6 +163,23 @@ cv2::Mat convertFrameToMat(videoFrame* frame) {
     return raw_image;
 }
 
+// Fonction pour appliquer un filtre de débruitage à une image
+cv2::Mat denoiseImage(const cv2::Mat& input_image) {
+    cv2::Mat denoised_image;
+    try {
+        MA_LOGI(TAG, "Application du filtre de débruitage gaussien...");
+        // Utilisation de GaussianBlur qui est disponible dans le module core d'OpenCV
+        // Paramètres: image source, image destination, taille du noyau, écart-type X, écart-type Y
+        cv2::GaussianBlur(input_image, denoised_image, cv2::Size(3, 3), 1.0, 1.0);
+        MA_LOGI(TAG, "Filtre de débruitage gaussien appliqué avec succès");
+        return denoised_image;
+    } catch (const std::exception& e) {
+        MA_LOGW(TAG, "Erreur lors de l'application du filtre de débruitage: %s", e.what());
+        // En cas d'erreur, retourner l'image d'origine
+        return input_image.clone();
+    }
+}
+
 // Fonction pour créer et publier une frame de sortie à partir d'une Mat OpenCV
 bool prepareAndPublishOutputFrame(const cv2::Mat& output_image, videoFrame* input_frame, MessageBox& output_frame, int output_width, int output_height) {
     // Créer une nouvelle frame pour l'image traitée
@@ -206,10 +227,95 @@ ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
       output_frame_(60),
       debug_(false),
       saved_image_count_(0),
-      capture_requested_(false) {}
+      capture_requested_(false),
+      lights_enabled_(true),
+      white_led_state_(false),
+      red_led_state_(false),
+      blue_led_state_(false),
+      flash_active_(false),
+      flash_intensity_(-1) {}
 
 ImagePreProcessorNode::~ImagePreProcessorNode() {
     onDestroy();
+}
+
+// Contrôle d'une LED spécifique
+bool ImagePreProcessorNode::controlLight(const std::string& led_name, bool turn_on, int intensity) {
+    if (!lights_enabled_.load() && turn_on) {
+        MA_LOGI(TAG, "LEDs sont désactivées globalement, impossible d'allumer %s", led_name.c_str());
+        return false;
+    }
+
+    try {
+        Led led(led_name);
+
+        if (turn_on) {
+            led.turnOn(intensity);
+            MA_LOGI(TAG, "LED %s allumée (intensité: %d)", led_name.c_str(), intensity);
+
+            // Mettre à jour l'état de la LED
+            if (led_name == "white")
+                white_led_state_.store(true);
+            else if (led_name == "red")
+                red_led_state_.store(true);
+            else if (led_name == "blue")
+                blue_led_state_.store(true);
+        } else {
+            led.turnOff();
+            MA_LOGI(TAG, "LED %s éteinte", led_name.c_str());
+
+            // Mettre à jour l'état de la LED
+            if (led_name == "white")
+                white_led_state_.store(false);
+            else if (led_name == "red")
+                red_led_state_.store(false);
+            else if (led_name == "blue")
+                blue_led_state_.store(false);
+        }
+        return true;
+    } catch (const std::exception& e) {
+        MA_LOGE(TAG, "Erreur lors du contrôle de la LED %s: %s", led_name.c_str(), e.what());
+        return false;
+    }
+}
+
+// Contrôle de toutes les LEDs
+bool ImagePreProcessorNode::controlAllLights(bool turn_on, int intensity) {
+    if (!lights_enabled_.load() && turn_on) {
+        MA_LOGI(TAG, "LEDs sont désactivées globalement");
+        return false;
+    }
+
+    bool success = true;
+    success &= controlLight("white", turn_on, intensity);
+    success &= controlLight("red", turn_on, intensity);
+    success &= controlLight("blue", turn_on, intensity);
+
+    return success;
+}
+
+// Flash d'une LED
+bool ImagePreProcessorNode::flashLight(const std::string& led_name, int intensity, unsigned int duration_ms) {
+    if (!lights_enabled_.load()) {
+        MA_LOGI(TAG, "LEDs sont désactivées globalement, impossible de flasher %s", led_name.c_str());
+        return false;
+    }
+
+    try {
+        Led led(led_name);
+
+        // Récupérer l'intensité maximale si nécessaire
+        if (intensity < 0) {
+            intensity = led.getMaxBrightness();
+        }
+
+        led.flash(intensity, duration_ms);
+        MA_LOGI(TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);
+        return true;
+    } catch (const std::exception& e) {
+        MA_LOGE(TAG, "Erreur lors du flash de la LED %s: %s", led_name.c_str(), e.what());
+        return false;
+    }
 }
 
 void ImagePreProcessorNode::threadEntry() {
@@ -222,7 +328,6 @@ void ImagePreProcessorNode::threadEntry() {
     MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: started_ = %s", started_ ? "true" : "false");
 
     while (started_) {
-        // MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: waiting for frame");
         // Attendre une image d'entrée avec timeout de 1 seconde
         if (!input_frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromSeconds(1))) {
             MA_LOGI(TAG, "No frame received for 1 sec (timeout)");
@@ -246,7 +351,6 @@ void ImagePreProcessorNode::threadEntry() {
             capture_requested_.store(false);
 
             ma_tick_t start_time = Tick::current();  // Mesure du temps de traitement
-            // MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: Processing frame with timestamp %lld", frame->timestamp);
 
             // Convertir la frame d'entrée en Mat OpenCV
             cv2::Mat raw_image = convertFrameToMat(frame);
@@ -259,6 +363,9 @@ void ImagePreProcessorNode::threadEntry() {
                 continue;
             }
 
+            // Appliquer un filtre de débruitage pour réduire le bruit sur l'image
+            raw_image = denoiseImage(raw_image);
+
             // Utiliser la fonction de redimensionnement pour traiter l'image
             cv2::Mat output_image = resizeImage(raw_image, output_width_, output_height_);
 
@@ -270,9 +377,19 @@ void ImagePreProcessorNode::threadEntry() {
 
             // Préparer et publier la frame de sortie
             prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+
+            // Après avoir traité l'image, éteindre le flash
+            // Extinction systématique du flash après traitement de l'image
+            if (white_led_state_.load()) {
+                // Éteindre la LED blanche qui sert de flash
+                MA_LOGI(TAG, "Traitement d'image terminé, extinction du flash");
+                controlLight("white", false);
+
+                // Flash de confirmation avec la LED bleue
+                flashLight("blue", flash_intensity_, 100);
+            }
         } else {
             // Si aucune capture n'est demandée, libérer l'image immédiatement
-            // MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: No capture requested, releasing frame");
             frame->release();
         }
 
@@ -351,6 +468,99 @@ ma_err_t ImagePreProcessorNode::onControl(const std::string& control, const json
     } else if (control == "debug" && data.is_boolean()) {
         debug_        = data.get<bool>();
         json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_OK}, {"data", debug_}});
+        server_->response(id_, response);
+    }
+    // Nouvelle commande pour activer/désactiver le contrôle global des LEDs
+    else if (control == "lights_enabled" && data.is_boolean()) {
+        lights_enabled_.store(data.get<bool>());
+
+        // Si désactivé, éteindre toutes les LEDs
+        if (!lights_enabled_.load()) {
+            controlAllLights(false);
+        }
+
+        json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_OK}, {"data", lights_enabled_.load()}});
+        server_->response(id_, response);
+    }
+    // Nouvelle commande pour allumer/éteindre une LED spécifique
+    else if (control == "light" && data.is_object()) {
+        bool success = false;
+        std::string led_name;
+        bool led_state = false;
+        int intensity  = -1;
+
+        if (data.contains("led") && data["led"].is_string()) {
+            led_name = data["led"].get<std::string>();
+
+            if (data.contains("state") && data["state"].is_boolean()) {
+                led_state = data["state"].get<bool>();
+
+                if (data.contains("intensity") && data["intensity"].is_number()) {
+                    intensity = data["intensity"].get<int>();
+                }
+
+                success = controlLight(led_name, led_state, intensity);
+            }
+        }
+
+        json response = json::object({{"type", MA_MSG_TYPE_RESP},
+                                      {"name", control},
+                                      {"code", success ? MA_OK : MA_EINVAL},
+                                      {"data", {{"led", led_name}, {"state", led_state}, {"intensity", intensity}, {"success", success}}}});
+        server_->response(id_, response);
+    }
+    // Nouvelle commande pour allumer/éteindre toutes les LEDs
+    else if (control == "all_lights" && data.is_object()) {
+        bool led_state = false;
+        int intensity  = -1;
+
+        if (data.contains("state") && data["state"].is_boolean()) {
+            led_state = data["state"].get<bool>();
+
+            if (data.contains("intensity") && data["intensity"].is_number()) {
+                intensity = data["intensity"].get<int>();
+            }
+        }
+
+        bool success = controlAllLights(led_state, intensity);
+
+        json response =
+            json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", success ? MA_OK : MA_EINVAL}, {"data", {{"state", led_state}, {"intensity", intensity}, {"success", success}}}});
+        server_->response(id_, response);
+    }
+    // Nouvelle commande pour faire flasher une LED
+    else if (control == "flash_light" && data.is_object()) {
+        bool success = false;
+        std::string led_name;
+        int intensity            = -1;
+        unsigned int duration_ms = 200;
+
+        if (data.contains("led") && data["led"].is_string()) {
+            led_name = data["led"].get<std::string>();
+
+            if (data.contains("intensity") && data["intensity"].is_number()) {
+                intensity = data["intensity"].get<int>();
+            }
+
+            if (data.contains("duration") && data["duration"].is_number()) {
+                duration_ms = data["duration"].get<unsigned int>();
+            }
+
+            success = flashLight(led_name, intensity, duration_ms);
+        }
+
+        json response = json::object({{"type", MA_MSG_TYPE_RESP},
+                                      {"name", control},
+                                      {"code", success ? MA_OK : MA_EINVAL},
+                                      {"data", {{"led", led_name}, {"intensity", intensity}, {"duration", duration_ms}, {"success", success}}}});
+        server_->response(id_, response);
+    }
+    // Demande d'état des LEDs
+    else if (control == "lights_state") {
+        json response = json::object({{"type", MA_MSG_TYPE_RESP},
+                                      {"name", control},
+                                      {"code", MA_OK},
+                                      {"data", {{"enabled", lights_enabled_.load()}, {"white", white_led_state_.load()}, {"red", red_led_state_.load()}, {"blue", blue_led_state_.load()}}}});
         server_->response(id_, response);
     } else {
         json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_ENOTSUP}, {"data", "Non supporté"}});

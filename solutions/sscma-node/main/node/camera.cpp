@@ -1,4 +1,3 @@
-
 #include <alsa/asoundlib.h>
 
 #include "camera.h"
@@ -376,7 +375,6 @@ void CameraNode::threadAudioEntryStub(void* obj) {
 ma_err_t CameraNode::onCreate(const json& config) {
     Guard guard(mutex_);
 
-
     if (initVideo() != 0) {
         MA_THROW(Exception(MA_EIO, "Not found camera device"));
     }
@@ -424,7 +422,7 @@ ma_err_t CameraNode::onCreate(const json& config) {
         light_ = config["light"].get<int>();
     }
 
-
+    // Configuration par défaut des canaux selon l'option
     switch (option_) {
         case 1:
             channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
@@ -432,8 +430,8 @@ ma_err_t CameraNode::onCreate(const json& config) {
             channels_[CHN_H264].height = 1080;
             channels_[CHN_H264].fps    = 15;
             channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
-            channels_[CHN_JPEG].width  = 1920;  // 2592
-            channels_[CHN_JPEG].height = 1080;  // 1944
+            channels_[CHN_JPEG].width  = 1920;
+            channels_[CHN_JPEG].height = 1080;
             channels_[CHN_JPEG].fps    = 10;
             break;
         case 2:
@@ -452,19 +450,34 @@ ma_err_t CameraNode::onCreate(const json& config) {
             channels_[CHN_H264].height = 1080;
             channels_[CHN_H264].fps    = 15;
             channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
-            channels_[CHN_JPEG].width  = 640;
-            channels_[CHN_JPEG].height = 640;
+            channels_[CHN_JPEG].width  = 1920;
+            channels_[CHN_JPEG].height = 1080;
             channels_[CHN_JPEG].fps    = 15;
             break;
     }
 
-    if (preview_) {
-        this->config(CHN_JPEG);
-        this->attach(CHN_JPEG, &frame_);
-    } else {
-        this->config(CHN_JPEG, 2592, 1944, 5, MA_PIXEL_FORMAT_JPEG);
-        this->attach(CHN_JPEG, &frame_);
+    // Récupérer les paramètres spécifiques de résolution JPEG depuis la configuration JSON
+    if (config.contains("jpeg_resolution") && config["jpeg_resolution"].is_object()) {
+        auto& jpeg_res = config["jpeg_resolution"];
+
+        if (jpeg_res.contains("width") && jpeg_res["width"].is_number()) {
+            channels_[CHN_JPEG].width = jpeg_res["width"].get<int>();
+        }
+
+        if (jpeg_res.contains("height") && jpeg_res["height"].is_number()) {
+            channels_[CHN_JPEG].height = jpeg_res["height"].get<int>();
+        }
+
+        if (jpeg_res.contains("fps") && jpeg_res["fps"].is_number()) {
+            channels_[CHN_JPEG].fps = jpeg_res["fps"].get<int>();
+        }
+
+        MA_LOGI(TAG, "JPEG resolution set from config: %dx%d@%dfps", channels_[CHN_JPEG].width, channels_[CHN_JPEG].height, channels_[CHN_JPEG].fps);
     }
+
+    // Configurer le canal JPEG avec les paramètres définis ou spécifiés
+    this->config(CHN_JPEG, channels_[CHN_JPEG].width, channels_[CHN_JPEG].height, channels_[CHN_JPEG].fps, MA_PIXEL_FORMAT_JPEG);
+    this->attach(CHN_JPEG, &frame_);
 
     if (websocket_) {
         TransportWebSocket::Config ws_config = {.port = 8080};

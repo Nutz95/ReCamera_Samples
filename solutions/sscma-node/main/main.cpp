@@ -1,4 +1,6 @@
+#include <fstream>
 #include <iostream>
+#include <string>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -10,9 +12,10 @@
 
 #include "signal.h"
 
+#include "flash_config.h"
 #include "node/image_preprocessor.h"
+#include "node/led.h"
 #include "node/server.h"
-#include <fstream>
 
 // Inclure les en-têtes nécessaires pour la réinitialisation VPSS
 extern "C" {
@@ -29,6 +32,45 @@ const std::string TAG = "sscma";
 
 using namespace ma;
 using namespace ma::node;
+
+// Fonctions pour contrôler directement les LEDs
+bool controlLed(const std::string& led_name, bool turn_on, int intensity = -1) {
+    try {
+        Led led(led_name);
+        if (turn_on) {
+            led.turnOn(intensity);
+            MA_LOGI(TAG, "LED %s allumée (intensité: %d)", led_name.c_str(), intensity);
+        } else {
+            led.turnOff();
+            MA_LOGI(TAG, "LED %s éteinte", led_name.c_str());
+        }
+        return true;
+    } catch (const std::exception& e) {
+        MA_LOGE(TAG, "Erreur lors du contrôle de la LED %s: %s", led_name.c_str(), e.what());
+        return false;
+    }
+}
+
+bool controlAllLeds(bool turn_on, int intensity = -1) {
+    bool success = true;
+    success &= controlLed("white", turn_on, intensity);
+    success &= controlLed("red", turn_on, intensity);
+    success &= controlLed("blue", turn_on, intensity);
+    return success;
+}
+
+// Fonction pour faire flasher une LED
+bool flashLed(const std::string& led_name, int intensity = -1, unsigned int duration_ms = 200) {
+    try {
+        Led led(led_name);
+        led.flash(intensity, duration_ms);
+        MA_LOGI(TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);
+        return true;
+    } catch (const std::exception& e) {
+        MA_LOGE(TAG, "Erreur lors du flash de la LED %s: %s", led_name.c_str(), e.what());
+        return false;
+    }
+}
 
 // Ajouter une fonction pour nettoyer et réinitialiser les ressources système
 void resetSystemResources() {
@@ -146,6 +188,14 @@ int main(int argc, char** argv) {
 
         // Réinitialiser les ressources système au démarrage pour éviter les conflits
         resetSystemResources();
+
+        // Lire les paramètres de configuration du flash depuis flow.json
+        FlashConfig flashConfig = readFlashConfigFromFile();
+
+        // Désactiver le clignotement de la LED rouge si configuré
+        if (flashConfig.disable_red_led_blinking) {
+            ma::disableRedLedBlinking();
+        }
 
         StorageFile* config = new StorageFile();
         config->init(config_file.c_str());
@@ -301,19 +351,38 @@ int main(int argc, char** argv) {
                     std::cout << "Demande de fermeture de l'application...\n";
                     running = false;
                 } else {
+                    // Lire les paramètres de configuration du flash à chaque capture
+                    // pour permettre l'ajustement sans redémarrer l'application
+                    FlashConfig flashConfig = readFlashConfigFromFile();
+
+                    std::cout << "Activation du flash pour la capture...\n";
+
+                    // Activer le flash (LED blanche) en utilisant directement la méthode de ImagePreProcessorNode
+                    imagePreProcessor->controlLight("white", true, flashConfig.flash_intensity);
+
+                    // Attendre un court moment pour que la caméra s'adapte à l'éclairage
+                    std::cout << "Attente de " << flashConfig.pre_capture_delay_ms << " ms avant la capture...\n";
+                    Thread::sleep(Tick::fromMilliseconds(flashConfig.pre_capture_delay_ms));
+
                     std::cout << "Capture d'image demandée...\n";
+
                     // Demander une capture d'image
+                    // Le flash sera éteint automatiquement après le traitement dans image_preprocessor.cpp
                     imagePreProcessor->requestCapture();
 
-                    // Attendre un moment pour que l'image soit capturée et traitée
-                    Thread::sleep(Tick::fromMilliseconds(500));
+                    std::cout << "Capture en cours, le flash s'éteindra automatiquement après le traitement...\n";
+                    std::cout << "Pour modifier les paramètres du flash, éditez le fichier /userdata/flow.json\n";
 
-                    std::cout << "Capture terminée. Appuyez sur [Entrée] pour une nouvelle capture ou 'q' pour quitter.\n";
+                    Thread::sleep(Tick::fromMilliseconds(500));
+                    // Ajout des instructions après chaque capture pour rappeler à l'utilisateur
+                    std::cout << "\n=== Application de capture d'images ===\n";
+                    std::cout << "Appuyez sur [Entrée] pour capturer une image\n";
+                    std::cout << "Appuyez sur 'q' pour quitter\n";
                 }
             }
 
             // Dormir un court instant pour éviter de surcharger le CPU
-            Thread::sleep(Tick::fromMilliseconds(100));
+            Thread::sleep(Tick::fromMilliseconds(10));
         }
 
         // Restaurer les paramètres du terminal

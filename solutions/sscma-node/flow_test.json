@@ -1,4 +1,10 @@
 {
+    "flash_config": {
+        "pre_capture_delay_ms": 50,
+        "flash_duration_ms": 10,
+        "flash_intensity": 255,
+        "disable_red_led_blinking": true
+    },
     "nodes": [
         {
             "id": "camera0",
@@ -7,7 +13,12 @@
                 "option": "1080p",
                 "preview": false,
                 "websocket": false,
-                "audio": false
+                "audio": false,
+                "jpeg_resolution": {
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30
+                }
             },
             "deps": []
         },
