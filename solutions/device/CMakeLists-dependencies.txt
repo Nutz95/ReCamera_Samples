@@ -1,0 +1,2 @@
+# Define dependencies for the application
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcviruntime, libsys, libvpss, libvi, libvo, libvenc, libmpi, libcvi-bin, libcvi-rtsp")

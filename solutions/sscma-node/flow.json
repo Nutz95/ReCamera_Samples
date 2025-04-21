@@ -1,0 +1,41 @@
+{
+    "device": {
+        "id": "recamera-001",
+        "name": "ReCamera"
+    },
+    "nodes": [
+        {
+            "id": "camera0",
+            "type": "camera",
+            "config": {
+                "option": "1080p",
+                "preview": true
+            }
+        },
+        {
+            "id": "preprocessor0",
+            "type": "image_preprocessor",
+            "config": {
+                "width": 640,
+                "height": 640,
+                "debug": true
+            },
+            "deps": [
+                "camera0"
+            ]
+        },
+        {
+            "id": "save0",
+            "type": "save",
+            "config": {
+                "path": "/userdata/IMAGES",
+                "format": "jpg",
+                "prefix": "processed_",
+                "count": 1
+            },
+            "deps": [
+                "preprocessor0"
+            ]
+        }
+    ]
+}

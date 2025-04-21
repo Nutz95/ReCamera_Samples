@@ -1,0 +1,27 @@
+{
+    "nodes": [
+        {
+            "id": "camera0",
+            "type": "camera",
+            "config": {
+                "option": "1080p",
+                "preview": false,
+                "websocket": false,
+                "audio": false
+            },
+            "deps": []
+        },
+        {
+            "id": "preprocessor0",
+            "type": "image_preprocessor",
+            "config": {
+                "width": 640,
+                "height": 640,
+                "debug": true
+            },
+            "deps": [
+                "camera0"
+            ]
+        }
+    ]
+}
