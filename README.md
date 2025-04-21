@@ -1,6 +1,75 @@
-# SSCMA Example for SG200X  
+# SSCMA Simple Image capture Example for SG200X with OpenCv processing.
 
-This repository provides a compilation framework for developing and running applications on the **ReCamera** platform. It includes setup instructions, compilation steps, and installation guidelines.  
+This repository provides a sample project that will help you to easily take some pictures from the ReCamera.
+
+For that the project you are looking for is `sscma-node`.
+
+To build it you will want to follow the next guidelines in order to properly setup the different dependencies and download the **ReCamera-OS** and the prebuilt SDK (see chapter 1 and 2 of this guide)
+
+
+## Notes about compilation helpers:
+### deploy_sscma_node.sh
+A script that will help you build and deploy your project to your ReCamera.
+
+You will need to edit the begining of the file to setup your environement folders:
+
+```bash 
+HOME_DIR="/home/xxx"  # replace xxx with your user name on your Ubuntu 20.04
+PROJECT_FOLDER="sscma-example-sg200x"
+RECAMERA_OS_FOLDER="reCamera"
+RECAMERA_OS_SDK_FOLDER="reCameraOS_SDK"
+
+# Configuration
+CAMERA_USER="recamera"
+CAMERA_IP="192.168.42.1"
+PASSWORD="XXXX" # Consider safer ways to handle passwords
+```
+
+- on my Ubuntu 20.04 LTS (wsl), i have this repo files downloaded inside **/home/[USERNAME]/sscma-example-sg200x**
+- I have my ReCamera OS downloaded into **/home/[USERNAME]/reCamera**
+- I have mu ReCamera OS SDK downloaded into **/home/[USERNAME]/reCameraOS_SDK**
+So adjust the variables above to fit your environement.
+
+- Of course replace the "XXXX" to fit your ssh camera password.
+
+Execute the script on your vsCode terminal:
+```bash
+/home/xxx/deploy_sscma_node.sh
+```
+
+The script will then build your project, make a static includes of all the dependancies and libs, then create a .deb package, then will try to deploy it using ***sshpass*** (you may need to install it in your ubuntu system for it to work.)
+
+* Once deployed, connect to your camera using another terminal inside VsCode:
+```bash
+ssh recamera@192.168.42.1
+```
+
+* once logged in, copy the helper scripts (using winscp or scp command) **start_custom_node.sh** and **stop_all.sh** to your home folder.
+
+make them executable if needed:
+```bash
+sudo chmod +x start_custom_node.sh
+sudo chmod +x stop_all.sh
+```
+
+* Run the **stop_all.sh** to stop NodeRed service (it will cause you trouble if it's still runnin, plus it will free you a lot of memory for your application!!!!)
+```bash
+sudo stop_all.sh
+```
+
+* Start you application (it will also close existing instances and stop NodeRed)
+```bash
+sudo start_custom_node.sh
+```
+
+If everything is fine you should have your **sscma-node** application running.
+
+* To deploy a new version of your application, on you vscode ubuntu system, call again the **deploy_sscma_node.sh** script and it will deploy the new version to your camera.
+
+### start_custom_node.sh
+
+### stop_all.sh
+
 
 ## Project Directory Structure  
 
