@@ -161,7 +161,6 @@ int CameraNode::vencCallback(void* pData, void* pArgs) {
 }
 
 int CameraNode::vpssCallback(void* pData, void* pArgs) {
-
     APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
     VIDEO_FRAME_INFO_S* VpssFrame     = (VIDEO_FRAME_INFO_S*)pData;
     VIDEO_FRAME_S* f                  = &VpssFrame->stVFrame;
@@ -174,17 +173,40 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         return CVI_SUCCESS;
     }
 
-    videoFrame* frame   = new videoFrame();
-    frame->chn          = pstVencChnCfg->VencChn;
-    frame->img.size     = f->u32Length[0] + f->u32Length[1] + f->u32Length[2];
-    frame->img.width    = channels_[pstVencChnCfg->VencChn].width;
-    frame->img.height   = channels_[pstVencChnCfg->VencChn].height;
-    frame->img.format   = channels_[pstVencChnCfg->VencChn].format;
-    frame->img.key      = true;
-    frame->img.physical = true;
-    frame->img.data     = reinterpret_cast<uint8_t*>(f->u64PhyAddr[0]);
-    frame->timestamp    = Tick::current();
-    frame->fps          = channels_[pstVencChnCfg->VencChn].fps;
+    videoFrame* frame = new videoFrame();
+    frame->chn        = pstVencChnCfg->VencChn;
+    frame->img.size   = f->u32Length[0] + f->u32Length[1] + f->u32Length[2];
+    frame->img.width  = channels_[pstVencChnCfg->VencChn].width;
+    frame->img.height = channels_[pstVencChnCfg->VencChn].height;
+    frame->img.format = channels_[pstVencChnCfg->VencChn].format;
+    frame->img.key    = true;
+
+    // Mapping mémoire physique -> virtuelle pour RAW
+    if (f->pu8VirAddr[0]) {
+        frame->img.physical = false;
+        frame->img.data     = new uint8_t[frame->img.size];
+        memcpy(frame->img.data, f->pu8VirAddr[0], frame->img.size);
+    } else {
+        // Mapping mémoire physique
+        uint64_t phyAddr = f->u64PhyAddr[0];
+        uint32_t size    = frame->img.size;
+        void* virtAddr   = CVI_SYS_Mmap(phyAddr, size);
+        if (!virtAddr) {
+            MA_LOGE(TAG, "CVI_SYS_Mmap failed! phyAddr=0x%lx size=%u", phyAddr, size);
+            delete frame;
+            return CVI_FAILURE;
+        }
+        // allume la led bleue
+        // ma::node::Led::controlLed("blue", true, 1);
+        // MA_LOGI(TAG, "CVI_SYS_Mmap OK: phyAddr=0x%lx size=%u virtAddr=%p", phyAddr, size, virtAddr);
+        frame->img.physical = true;  // Marquer que cette mémoire doit être libérée avec CVI_SYS_Munmap
+        frame->img.data     = reinterpret_cast<uint8_t*>(virtAddr);
+
+        // Nous n'avons pas besoin de stocker l'adresse physique car elle n'est pas nécessaire pour CVI_SYS_Munmap
+        // qui prend uniquement l'adresse virtuelle et la taille
+    }
+    frame->timestamp = Tick::current();
+    frame->fps       = channels_[pstVencChnCfg->VencChn].fps;
     frame->ref(channels_[pstVencChnCfg->VencChn].msgboxes.size());
     for (auto& msgbox : channels_[pstVencChnCfg->VencChn].msgboxes) {
         if (!msgbox->post(frame, Tick::fromMilliseconds(5))) {
@@ -372,6 +394,67 @@ void CameraNode::threadAudioEntryStub(void* obj) {
     reinterpret_cast<CameraNode*>(obj)->threadAudioEntry();
 }
 
+// Fonction utilitaire pour appliquer une configuration de résolution à un canal
+void CameraNode::applyResolutionConfig(int chn, const json& config, const std::string& groupName) {
+    if (config.contains(groupName) && config[groupName].is_object()) {
+        auto& res = config[groupName];
+        if (res.contains("width") && res["width"].is_number()) {
+            channels_[chn].width = res["width"].get<int>();
+        }
+        if (res.contains("height") && res["height"].is_number()) {
+            channels_[chn].height = res["height"].get<int>();
+        }
+        if (res.contains("fps") && res["fps"].is_number()) {
+            channels_[chn].fps = res["fps"].get<int>();
+        }
+        MA_LOGI(TAG, "%s resolution set from config: %dx%d@%dfps", groupName.c_str(), channels_[chn].width, channels_[chn].height, channels_[chn].fps);
+    }
+}
+
+// Nouvelle fonction pour configurer les canaux par défaut selon l'option
+void CameraNode::configureDefaultChannels() {
+    switch (option_) {
+        case 1:  // 1080p
+            channels_[CHN_RAW].format  = MA_PIXEL_FORMAT_RGB888;
+            channels_[CHN_RAW].width   = 1920;
+            channels_[CHN_RAW].height  = 1080;
+            channels_[CHN_RAW].fps     = 15;
+            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
+            channels_[CHN_H264].width  = 1920;
+            channels_[CHN_H264].height = 1080;
+            channels_[CHN_H264].fps    = 15;
+            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
+            channels_[CHN_JPEG].width  = 1920;
+            channels_[CHN_JPEG].height = 1080;
+            channels_[CHN_JPEG].fps    = 10;
+            break;
+        case 2:  // 720p
+            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
+            channels_[CHN_H264].width  = 1280;
+            channels_[CHN_H264].height = 720;
+            channels_[CHN_H264].fps    = 15;
+            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
+            channels_[CHN_JPEG].width  = 1280;
+            channels_[CHN_JPEG].height = 720;
+            channels_[CHN_JPEG].fps    = 15;
+            break;
+        default:  // 480p
+            channels_[CHN_RAW].format  = MA_PIXEL_FORMAT_RGB888;
+            channels_[CHN_RAW].width   = 854;
+            channels_[CHN_RAW].height  = 480;
+            channels_[CHN_RAW].fps     = 15;
+            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
+            channels_[CHN_H264].width  = 854;
+            channels_[CHN_H264].height = 480;
+            channels_[CHN_H264].fps    = 15;
+            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
+            channels_[CHN_JPEG].width  = 854;
+            channels_[CHN_JPEG].height = 480;
+            channels_[CHN_JPEG].fps    = 15;
+            break;
+    }
+}
+
 ma_err_t CameraNode::onCreate(const json& config) {
     Guard guard(mutex_);
 
@@ -423,61 +506,27 @@ ma_err_t CameraNode::onCreate(const json& config) {
     }
 
     // Configuration par défaut des canaux selon l'option
-    switch (option_) {
-        case 1:
-            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
-            channels_[CHN_H264].width  = 1920;
-            channels_[CHN_H264].height = 1080;
-            channels_[CHN_H264].fps    = 15;
-            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
-            channels_[CHN_JPEG].width  = 1920;
-            channels_[CHN_JPEG].height = 1080;
-            channels_[CHN_JPEG].fps    = 10;
-            break;
-        case 2:
-            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
-            channels_[CHN_H264].width  = 640;
-            channels_[CHN_H264].height = 480;
-            channels_[CHN_H264].fps    = 15;
-            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
-            channels_[CHN_JPEG].width  = 640;
-            channels_[CHN_JPEG].height = 640;
-            channels_[CHN_JPEG].fps    = 15;
-            break;
-        default:
-            channels_[CHN_H264].format = MA_PIXEL_FORMAT_H264;
-            channels_[CHN_H264].width  = 1920;
-            channels_[CHN_H264].height = 1080;
-            channels_[CHN_H264].fps    = 15;
-            channels_[CHN_JPEG].format = MA_PIXEL_FORMAT_JPEG;
-            channels_[CHN_JPEG].width  = 1920;
-            channels_[CHN_JPEG].height = 1080;
-            channels_[CHN_JPEG].fps    = 15;
-            break;
+    configureDefaultChannels();
+
+    // Appliquer la configuration de résolution pour JPEG et RAW
+    applyResolutionConfig(CHN_JPEG, config, "jpeg_resolution");
+    applyResolutionConfig(CHN_RAW, config, "raw_resolution");
+
+    // Déterminer le canal à attacher (par défaut RAW)
+    int attach_channel = CHN_RAW;
+    if (config.contains("attach_channel") && config["attach_channel"].is_string()) {
+        std::string ch = config["attach_channel"].get<std::string>();
+        if (ch == "jpeg" || ch == "jpg")
+            attach_channel = CHN_JPEG;
+        else if (ch == "h264")
+            attach_channel = CHN_H264;
+        else if (ch == "raw")
+            attach_channel = CHN_RAW;
     }
 
-    // Récupérer les paramètres spécifiques de résolution JPEG depuis la configuration JSON
-    if (config.contains("jpeg_resolution") && config["jpeg_resolution"].is_object()) {
-        auto& jpeg_res = config["jpeg_resolution"];
-
-        if (jpeg_res.contains("width") && jpeg_res["width"].is_number()) {
-            channels_[CHN_JPEG].width = jpeg_res["width"].get<int>();
-        }
-
-        if (jpeg_res.contains("height") && jpeg_res["height"].is_number()) {
-            channels_[CHN_JPEG].height = jpeg_res["height"].get<int>();
-        }
-
-        if (jpeg_res.contains("fps") && jpeg_res["fps"].is_number()) {
-            channels_[CHN_JPEG].fps = jpeg_res["fps"].get<int>();
-        }
-
-        MA_LOGI(TAG, "JPEG resolution set from config: %dx%d@%dfps", channels_[CHN_JPEG].width, channels_[CHN_JPEG].height, channels_[CHN_JPEG].fps);
-    }
-
-    // Configurer le canal JPEG avec les paramètres définis ou spécifiés
-    this->config(CHN_JPEG, channels_[CHN_JPEG].width, channels_[CHN_JPEG].height, channels_[CHN_JPEG].fps, MA_PIXEL_FORMAT_JPEG);
-    this->attach(CHN_JPEG, &frame_);
+    // Configurer le canal choisi avec les paramètres définis ou spécifiés
+    this->config(attach_channel, channels_[attach_channel].width, channels_[attach_channel].height, channels_[attach_channel].fps, channels_[attach_channel].format);
+    this->attach(attach_channel, &frame_);
 
     if (websocket_) {
         TransportWebSocket::Config ws_config = {.port = 8080};

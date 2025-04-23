@@ -33,45 +33,6 @@ const std::string TAG = "sscma";
 using namespace ma;
 using namespace ma::node;
 
-// Fonctions pour contrôler directement les LEDs
-bool controlLed(const std::string& led_name, bool turn_on, int intensity = -1) {
-    try {
-        Led led(led_name);
-        if (turn_on) {
-            led.turnOn(intensity);
-            MA_LOGI(TAG, "LED %s allumée (intensité: %d)", led_name.c_str(), intensity);
-        } else {
-            led.turnOff();
-            MA_LOGI(TAG, "LED %s éteinte", led_name.c_str());
-        }
-        return true;
-    } catch (const std::exception& e) {
-        MA_LOGE(TAG, "Erreur lors du contrôle de la LED %s: %s", led_name.c_str(), e.what());
-        return false;
-    }
-}
-
-bool controlAllLeds(bool turn_on, int intensity = -1) {
-    bool success = true;
-    success &= controlLed("white", turn_on, intensity);
-    success &= controlLed("red", turn_on, intensity);
-    success &= controlLed("blue", turn_on, intensity);
-    return success;
-}
-
-// Fonction pour faire flasher une LED
-bool flashLed(const std::string& led_name, int intensity = -1, unsigned int duration_ms = 200) {
-    try {
-        Led led(led_name);
-        led.flash(intensity, duration_ms);
-        MA_LOGI(TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);
-        return true;
-    } catch (const std::exception& e) {
-        MA_LOGE(TAG, "Erreur lors du flash de la LED %s: %s", led_name.c_str(), e.what());
-        return false;
-    }
-}
-
 // Ajouter une fonction pour nettoyer et réinitialiser les ressources système
 void resetSystemResources() {
     MA_LOGI(TAG, "Réinitialisation des ressources système...");
@@ -349,7 +310,14 @@ int main(int argc, char** argv) {
             if (result > 0) {
                 if (c == 'q' || c == 'Q') {
                     std::cout << "Demande de fermeture de l'application...\n";
+
+                    // S'assurer que toutes les LEDs sont éteintes avant de quitter
+                    std::cout << "Extinction de toutes les LEDs...\n";
+                    // Éteindre d'abord la LED blanche (utilisée pour le flash)
+                    imagePreProcessor->controlLight("white", false);
+                    std::cout << "Toutes les LEDs ont été éteintes.\n";
                     running = false;
+
                 } else {
                     // Lire les paramètres de configuration du flash à chaque capture
                     // pour permettre l'ajustement sans redémarrer l'application

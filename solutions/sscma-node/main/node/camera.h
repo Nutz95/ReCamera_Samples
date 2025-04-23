@@ -3,6 +3,7 @@
 #include "node.h"
 #include "server.h"
 
+#include "led.h"
 #include "video.h"
 
 namespace ma::node {
@@ -46,8 +47,17 @@ public:
     }
     inline void release() override {
         if (ref_cnt.load(std::memory_order_relaxed) == 0 || ref_cnt.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            if (!img.physical) {
+            if (img.physical && img.data) {
+                // Libération mémoire mappée avec CVI_SYS_Mmap
+                CVI_SYS_Munmap(img.data, img.size);
+                // ma::node::Led::controlLed("blue", false);
+                // rajoute un log pour lister les adresses physiques qui sont libérées
+                // MA_LOGI(TAG, "CVI_SYS_Munmap OK: phyAddr=0x%lx size=%u virtAddr=%p", img.physical, img.size, img.data);
+                img.data = nullptr;
+            } else if (img.data) {
+                // Libération mémoire allouée avec new[]
                 delete[] img.data;
+                img.data = nullptr;
             }
             delete this;
         }
@@ -102,6 +112,9 @@ protected:
     static int vpssCallbackStub(void* pData, void* pArgs, void* pUserData);
 
 private:
+    void applyResolutionConfig(int chn, const json& config, const std::string& groupName);
+    void configureDefaultChannels();
+
     std::vector<channel> channels_;
     uint32_t count_;
     bool preview_;

@@ -11,11 +11,11 @@ namespace cv2 = cv;
 
 namespace ma::node {
 
-#define CURRENT_CHANNEL CHN_JPEG  // CHN_JPEG, CHN_RAW, CHN_H264
-#define RES_WIDTH       1920      // Configuration pour résolution 1080p
-#define RES_HEIGHT      1080      // Configuration pour résolution 1080p
-#define JPEG_QUALITY    100
-#define FPS             10  // FPS standard pour 1080p
+// Suppression ou remplacement de la définition de CURRENT_CHANNEL
+#define RES_WIDTH    1920  // Configuration pour résolution 1080p
+#define RES_HEIGHT   1080  // Configuration pour résolution 1080p
+#define JPEG_QUALITY 100
+#define FPS          10  // FPS standard pour 1080p
 
 static constexpr char TAG[] = "ma::node::image_preprocessor";
 
@@ -36,6 +36,27 @@ bool saveImageToJpeg(const cv2::Mat& image, const std::string& filepath, int qua
         }
     }
     return cv2::imwrite(filepath, image, im_params);
+}
+
+// Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
+bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool create_dir = true) {
+    if (create_dir) {
+        size_t last_slash = filepath.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            std::string dir = filepath.substr(0, last_slash);
+            struct stat st;
+            if (stat(dir.c_str(), &st) != 0) {
+                if (mkdir(dir.c_str(), 0777) != 0) {
+                    MA_LOGE(TAG, "Failed to create directory: %s", dir.c_str());
+                    return false;
+                }
+            }
+        }
+    }
+    cv2::Mat brg_image;
+    cv2::cvtColor(image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
+    MA_LOGI(TAG, "Created Mat from RGB888 frame and converted to BGR");
+    return cv2::imwrite(filepath, brg_image);
 }
 
 // Fonction pour redimensionner une image à la taille cible avec des bandes noires
@@ -95,17 +116,17 @@ void saveProcessedImages(const cv2::Mat& input_image, const cv2::Mat& output_ima
     }
 
     // Nom des fichiers avec préfixe et timestamp
-    std::string input_filename  = output_dir + timestamp_ms + "_raw" + ".jpg";
-    std::string output_filename = output_dir + timestamp_ms + ".jpg";
+    std::string input_filename_jpeg = output_dir + timestamp_ms + "_raw" + ".jpg";
+    std::string output_filename     = output_dir + timestamp_ms + ".jpg";
 
-    // Sauvegarder les images
-    bool input_saved  = saveImageToJpeg(input_image, input_filename, JPEG_QUALITY, false);
-    bool output_saved = saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
+
+    bool input_saved_jpeg = saveImageToJpeg(input_image, input_filename_jpeg, JPEG_QUALITY, false);
+    bool output_saved     = saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
 
     MA_LOGI(TAG,
-            "Images sauvegardées - input: %s (%s), output: %s (%s) (processing time: %.2f ms)",
-            input_filename.c_str(),
-            input_saved ? "OK" : "ÉCHEC",
+            "Images sauvegardées - input_jpeg: %s (%s), input_bmp: %s (%s), output_jpeg: %s (%s) (processing time: %.2f ms)",
+            input_filename_jpeg.c_str(),
+            input_saved_jpeg ? "OK" : "ÉCHEC",
             output_filename.c_str(),
             output_saved ? "OK" : "ÉCHEC",
             processing_time_ms);
@@ -118,40 +139,30 @@ cv2::Mat convertFrameToMat(videoFrame* frame) {
     cv2::Mat raw_image;
 
     // Ajouter un log pour voir quel format d'image est reçu
-    MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical);
+    MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d, channel=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical, frame->chn);
 
-    if (frame->img.physical) {
-        // Si l'image est en mémoire physique, nous devons d'abord la copier
-        // Note: la gestion de la mémoire physique peut nécessiter une adaptation selon votre système
-        raw_image = cv2::Mat(frame->img.height, frame->img.width, CV_8UC3);
-        memcpy(raw_image.data, frame->img.data, frame->img.size);
-        MA_LOGI(TAG, "Copied physical memory image to CPU memory");
+    if (frame->img.format == MA_PIXEL_FORMAT_RGB888) {
+        raw_image = cv2::Mat(frame->img.height, frame->img.width, CV_8UC3, frame->img.data);
+    } else if (frame->img.format == MA_PIXEL_FORMAT_YUV422) {
+        // Conversion YUV422 vers BGR (directement pour OpenCV)
+        cv2::Mat yuv(frame->img.height, frame->img.width, CV_8UC2, frame->img.data);
+        cv2::cvtColor(yuv, raw_image, cv2::COLOR_YUV2BGR_YUYV);  // Changement ici: YUV2BGR_YUYV
+        MA_LOGI(TAG, "Converted YUV422 to BGR");
+    } else if (frame->img.format == MA_PIXEL_FORMAT_JPEG) {
+        // Décodage JPEG
+        std::vector<uchar> buffer(frame->img.data, frame->img.data + frame->img.size);
+        raw_image = cv2::imdecode(buffer, cv2::IMREAD_COLOR);
+        MA_LOGI(TAG, "JPEG format Decoded size=%dx%d => %d", frame->img.width, frame->img.height, frame->img.size);
+    } else if (frame->img.format == MA_PIXEL_FORMAT_H264) {
+        // Le format H264 nécessite d'être décodé
+        MA_LOGW(TAG, "H264 format detected - this format requires a decoder");
+        // Pour H264, vous auriez besoin d'implémenter un décodeur H264
+        // Ce n'est pas trivial et nécessiterait l'utilisation de FFmpeg ou d'une autre bibliothèque
+        return cv2::Mat();
     } else {
-        // Si l'image est déjà en mémoire CPU
-        if (frame->img.format == MA_PIXEL_FORMAT_RGB888) {
-            raw_image = cv2::Mat(frame->img.height, frame->img.width, CV_8UC3, frame->img.data);
-            MA_LOGI(TAG, "Created Mat from RGB888 frame");
-        } else if (frame->img.format == MA_PIXEL_FORMAT_YUV422) {
-            // Conversion YUV422 vers RGB
-            cv2::Mat yuv(frame->img.height, frame->img.width, CV_8UC2, frame->img.data);
-            cv2::cvtColor(yuv, raw_image, cv2::COLOR_YUV2RGB_YUYV);
-            MA_LOGI(TAG, "Converted YUV422 to RGB");
-        } else if (frame->img.format == MA_PIXEL_FORMAT_JPEG) {
-            // Décodage JPEG
-            std::vector<uchar> buffer(frame->img.data, frame->img.data + frame->img.size);
-            raw_image = cv2::imdecode(buffer, cv2::IMREAD_COLOR);
-            MA_LOGI(TAG, "JPEG format Decoded size=%dx%d => %d", frame->img.width, frame->img.height, frame->img.size);
-        } else if (frame->img.format == MA_PIXEL_FORMAT_H264) {
-            // Le format H264 nécessite d'être décodé
-            MA_LOGW(TAG, "H264 format detected - this format requires a decoder");
-            // Pour H264, vous auriez besoin d'implémenter un décodeur H264
-            // Ce n'est pas trivial et nécessiterait l'utilisation de FFmpeg ou d'une autre bibliothèque
-            return cv2::Mat();
-        } else {
-            // Format non supporté - retourne une image vide
-            MA_LOGW(TAG, "Format d'image non supporté: %d", frame->img.format);
-            return cv2::Mat();
-        }
+        // Format non supporté - retourne une image vide
+        MA_LOGW(TAG, "Format d'image non supporté: %d", frame->img.format);
+        return cv2::Mat();
     }
 
     if (raw_image.empty()) {
@@ -233,7 +244,12 @@ ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
       red_led_state_(false),
       blue_led_state_(false),
       flash_active_(false),
-      flash_intensity_(-1) {}
+      flash_intensity_(-1),
+      enable_resize_(true),
+      enable_denoising_(true),
+      flash_duration_ms_(200),
+      pre_capture_delay_ms_(50),
+      disable_red_led_blinking_(false) {}
 
 ImagePreProcessorNode::~ImagePreProcessorNode() {
     onDestroy();
@@ -363,30 +379,82 @@ void ImagePreProcessorNode::threadEntry() {
                 continue;
             }
 
-            // Appliquer un filtre de débruitage pour réduire le bruit sur l'image
-            raw_image = denoiseImage(raw_image);
+            // Appliquer un filtre de débruitage uniquement si activé
+            if (enable_denoising_) {
+                MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
+                raw_image = denoiseImage(raw_image);
+            } else {
+                MA_LOGI(TAG, "Débruitage désactivé - Utilisation de l'image brute");
+            }
 
-            // Utiliser la fonction de redimensionnement pour traiter l'image
-            cv2::Mat output_image = resizeImage(raw_image, output_width_, output_height_);
+            // Redimensionner l'image uniquement si activé
+            cv2::Mat output_image;
+            if (enable_resize_) {
+                MA_LOGI(TAG, "Redimensionnement activé - Application du redimensionnement");
+                output_image = resizeImage(raw_image, output_width_, output_height_);
+            } else {
+                MA_LOGI(TAG, "Redimensionnement désactivé - Aucun redimensionnement appliqué");
+                // Si le redimensionnement est désactivé, output_image reste vide
+            }
 
             // Calculer le temps de traitement
             ma_tick_t processing_time = Tick::current() - start_time;
 
-            // Sauvegarder les images selon les nouvelles règles demandées
-            saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
+            // Sauvegarder les images uniquement si le redimensionnement est activé
+            // sinon, n'enregistre que l'image brute (ou débruitée)
+            if (enable_resize_) {
+                saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
 
-            // Préparer et publier la frame de sortie
-            prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+                // Préparer et publier la frame de sortie
+                prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+            } else {
+                // Si le redimensionnement est désactivé, nous n'avons pas d'image de sortie
+                // Donc on ne publie pas de frame et on libère la frame d'entrée
+                MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
+
+                // Sauvegarder uniquement l'image brute
+                std::string output_dir = "/userdata/IMAGES/";
+                struct stat st;
+                if (stat(output_dir.c_str(), &st) != 0) {
+                    mkdir(output_dir.c_str(), 0777);
+                }
+
+                // Obtenir le timestamp courant au format demandé
+                time_t now = time(nullptr);
+                struct tm tm_info;
+                localtime_r(&now, &tm_info);
+
+                char timestamp[64];
+                strftime(timestamp, sizeof(timestamp), "%Y_%m_%d_%H_%M_%S", &tm_info);
+
+                // Ajouter les millisecondes
+                struct timeval tv;
+                gettimeofday(&tv, NULL);
+                char timestamp_ms[80];
+                snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
+
+                // Nom du fichier avec préfixe et timestamp
+                std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
+
+                // Sauvegarder uniquement l'image brute (ou débruitée)
+                bool input_saved = saveImageToBmp(raw_image, input_filename, false);  // Sauvegarde en BMP
+
+                MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (processing time: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+
+                // Libérer la frame d'entrée
+                frame->release();
+
+                saved_image_count_++;
+            }
 
             // Après avoir traité l'image, éteindre le flash
-            // Extinction systématique du flash après traitement de l'image
             if (white_led_state_.load()) {
                 // Éteindre la LED blanche qui sert de flash
                 MA_LOGI(TAG, "Traitement d'image terminé, extinction du flash");
                 controlLight("white", false);
 
                 // Flash de confirmation avec la LED bleue
-                flashLight("blue", flash_intensity_, 100);
+                flashLight("blue", flash_intensity_, 20);
             }
         } else {
             // Si aucune capture n'est demandée, libérer l'image immédiatement
@@ -418,6 +486,60 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
         debug_ = config["debug"].get<bool>();
     }
 
+    // Configuration des options de traitement d'image
+    if (config.contains("enable_resize") && config["enable_resize"].is_boolean()) {
+        enable_resize_ = config["enable_resize"].get<bool>();
+        MA_LOGI(TAG, "Redimensionnement d'image %s", enable_resize_ ? "activé" : "désactivé");
+    }
+
+    if (config.contains("enable_denoising") && config["enable_denoising"].is_boolean()) {
+        enable_denoising_ = config["enable_denoising"].get<bool>();
+        MA_LOGI(TAG, "Débruitage d'image %s", enable_denoising_ ? "activé" : "désactivé");
+    }
+
+    // Lire les configurations du flash directement depuis la configuration du nœud
+    if (config.contains("flash_intensity") && config["flash_intensity"].is_number_integer()) {
+        flash_intensity_ = config["flash_intensity"].get<int>();
+        MA_LOGI(TAG, "Flash intensity configurée: %d", flash_intensity_);
+    }
+
+    if (config.contains("flash_duration_ms") && config["flash_duration_ms"].is_number_integer()) {
+        flash_duration_ms_ = config["flash_duration_ms"].get<unsigned int>();
+        MA_LOGI(TAG, "Flash duration configurée: %u ms", flash_duration_ms_);
+    }
+
+    if (config.contains("pre_capture_delay_ms") && config["pre_capture_delay_ms"].is_number_integer()) {
+        pre_capture_delay_ms_ = config["pre_capture_delay_ms"].get<unsigned int>();
+        MA_LOGI(TAG, "Pre-capture delay configuré: %u ms", pre_capture_delay_ms_);
+    }
+
+    if (config.contains("disable_red_led_blinking") && config["disable_red_led_blinking"].is_boolean()) {
+        disable_red_led_blinking_ = config["disable_red_led_blinking"].get<bool>();
+        MA_LOGI(TAG, "Désactivation du clignotement LED rouge: %s", disable_red_led_blinking_ ? "true" : "false");
+    }
+
+    // Lire le canal à utiliser depuis la configuration (raw ou jpeg)
+    // Par défaut, utiliser JPEG (canal 1)
+    channel_ = CHN_JPEG;  // Par défaut: CHN_JPEG (1)
+
+    if (config.contains("attach_channel") && config["attach_channel"].is_string()) {
+        std::string channel_str = config["attach_channel"].get<std::string>();
+        if (channel_str == "raw") {
+            channel_ = CHN_RAW;  // CHN_RAW (0)
+            MA_LOGI(TAG, "Canal configuré: RAW (0)");
+        } else if (channel_str == "jpeg" || channel_str == "jpg") {
+            channel_ = CHN_JPEG;  // CHN_JPEG (1)
+            MA_LOGI(TAG, "Canal configuré: JPEG (1)");
+        } else if (channel_str == "h264") {
+            channel_ = CHN_H264;  // CHN_H264 (2)
+            MA_LOGI(TAG, "Canal configuré: H264 (2)");
+        } else {
+            MA_LOGW(TAG, "Canal inconnu '%s', utilisation du canal JPEG (1) par défaut", channel_str.c_str());
+        }
+    } else {
+        MA_LOGW(TAG, "attach_channel non spécifié dans la configuration, utilisation du canal JPEG (1) par défaut");
+    }
+
     // Création du thread de traitement
     thread_ = new Thread((type_ + "#" + id_).c_str(), &ImagePreProcessorNode::threadEntryStub, this);
     if (thread_ == nullptr) {
@@ -430,7 +552,7 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
     server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "create"}, {"code", MA_OK}, {"data", {{"width", output_width_}, {"height", output_height_}}}}));
 
     // --- TRACE ---
-    MA_LOGI(TAG, "ImagePreProcessorNode.onCreate: width=%d height=%d debug=%s", output_width_, output_height_, debug_ ? "true" : "false");
+    MA_LOGI(TAG, "ImagePreProcessorNode.onCreate: width=%d height=%d debug=%s channel=%d", output_width_, output_height_, debug_ ? "true" : "false", channel_);
 
     return MA_OK;
 }
@@ -587,7 +709,7 @@ ma_err_t ImagePreProcessorNode::onDestroy() {
 
     // Détacher de la caméra si elle est connectée
     if (camera_ != nullptr) {
-        camera_->detach(CURRENT_CHANNEL, &input_frame_);  // Utiliser CHN_JPEG (1) au lieu de CHN_RAW
+        camera_->detach(channel_, &input_frame_);  // Utiliser le canal configuré
     }
 
     created_ = false;
@@ -618,26 +740,29 @@ ma_err_t ImagePreProcessorNode::onStart() {
         return MA_ENOTSUP;
     }
 
-    // MODIFICATION: Essayer d'utiliser le canal JPEG (1) au lieu de RAW (0)
-    if (CURRENT_CHANNEL == CHN_JPEG) {
+    // Utiliser le canal configuré dans flow.json (channel_) au lieu de CURRENT_CHANNEL
+    if (channel_ == CHN_JPEG) {
         MA_LOGI(TAG, "ImagePreProcessorNode.onStart: Configuring camera channel CHN_JPEG=%d", CHN_JPEG);
-        camera_->config(CURRENT_CHANNEL, RES_WIDTH, RES_HEIGHT, FPS, MA_PIXEL_FORMAT_JPEG);  // Canal 1 (JPEG)}
-    } else if (CURRENT_CHANNEL == CHN_RAW) {
+        camera_->config(channel_, RES_WIDTH, RES_HEIGHT, FPS, MA_PIXEL_FORMAT_JPEG);  // Canal 1 (JPEG)
+    } else if (channel_ == CHN_RAW) {
         MA_LOGI(TAG, "ImagePreProcessorNode.onStart: Configuring camera channel CHN_RAW=%d", CHN_RAW);
-        camera_->config(CURRENT_CHANNEL, RES_WIDTH, RES_HEIGHT, FPS, MA_PIXEL_FORMAT_RGB888);  // Canal 0 (RAW)
+        camera_->config(channel_, RES_WIDTH, RES_HEIGHT, FPS, MA_PIXEL_FORMAT_RGB888);  // Canal 0 (RAW)
+    } else if (channel_ == CHN_H264) {
+        MA_LOGI(TAG, "ImagePreProcessorNode.onStart: Configuring camera channel CHN_H264=%d", CHN_H264);
+        camera_->config(channel_, RES_WIDTH, RES_HEIGHT, FPS, MA_PIXEL_FORMAT_H264);  // Canal 2 (H264)
     } else {
         MA_THROW(Exception(MA_ENOTSUP, "Canal non supporté"));
         return MA_ENOTSUP;
     }
-    camera_->attach(CURRENT_CHANNEL, &input_frame_);  // Attachement au canal 1 (JPEG)
+    camera_->attach(channel_, &input_frame_);  // Attachement au canal configuré
 
-    MA_LOGI(TAG, "ImagePreProcessorNode.onStart: camera attached to channel %d, starting thread", CURRENT_CHANNEL);
+    MA_LOGI(TAG, "ImagePreProcessorNode.onStart: camera attached to channel %d, starting thread", channel_);
     started_ = true;
 
     // Démarrer le thread de traitement
     thread_->start(this);
 
-    MA_LOGI(TAG, "ImagePreProcessorNode.onStart: camera attached to channel %d, thread started", CURRENT_CHANNEL);
+    MA_LOGI(TAG, "ImagePreProcessorNode.onStart: camera attached to channel %d, thread started", channel_);
     return MA_OK;
 }
 
@@ -657,7 +782,7 @@ ma_err_t ImagePreProcessorNode::onStop() {
 
     // Détacher de la caméra
     if (camera_ != nullptr) {
-        camera_->detach(CURRENT_CHANNEL, &input_frame_);  // Détachement du canal JPEG (1) au lieu de RAW
+        camera_->detach(channel_, &input_frame_);  // Utiliser le canal configuré
         camera_ = nullptr;
     }
 

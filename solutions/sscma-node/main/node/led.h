@@ -51,6 +51,32 @@ public:
      */
     void flash(int intensity, unsigned int delay_ms);
 
+    /**
+     * @brief Contrôle une LED spécifique (allumer ou éteindre)
+     * @param led_name Nom de la LED (ex: "white", "red", "blue")
+     * @param turn_on True pour allumer, False pour éteindre
+     * @param intensity Intensité de la lumière (-1 pour utiliser la valeur maximale)
+     * @return True si l'opération a réussi, False sinon
+     */
+    static bool controlLed(const std::string& led_name, bool turn_on, int intensity = -1);
+    
+    /**
+     * @brief Contrôle toutes les LEDs (allumer ou éteindre)
+     * @param turn_on True pour allumer, False pour éteindre
+     * @param intensity Intensité de la lumière (-1 pour utiliser la valeur maximale)
+     * @return True si toutes les opérations ont réussi, False sinon
+     */
+    static bool controlAllLeds(bool turn_on, int intensity = -1);
+    
+    /**
+     * @brief Fait clignoter une LED spécifique
+     * @param led_name Nom de la LED (ex: "white", "red", "blue")
+     * @param intensity Intensité de la lumière (-1 pour utiliser la valeur maximale)
+     * @param duration_ms Durée en millisecondes
+     * @return True si l'opération a réussi, False sinon
+     */
+    static bool flashLed(const std::string& led_name, int intensity = -1, unsigned int duration_ms = 200);
+
 private:
     std::string path; // Chemin vers les fichiers de contrôle de la LED
 };

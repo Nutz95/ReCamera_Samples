@@ -69,6 +69,16 @@ protected:
     // Nouvelles variables pour gérer l'état du flash
     std::atomic<bool> flash_active_;  // Indique si le flash est actif et doit être éteint
     int flash_intensity_;             // Intensité du flash pour le flash de confirmation
+
+    // Nouvelles variables pour les paramètres de traitement d'image
+    bool enable_resize_;                 // Activer/désactiver le redimensionnement
+    bool enable_denoising_;              // Activer/désactiver le débruitage
+    unsigned int flash_duration_ms_;     // Durée du flash
+    unsigned int pre_capture_delay_ms_;  // Délai avant capture
+    bool disable_red_led_blinking_;      // Désactiver le clignotement de la LED rouge
+
+    // Nouveau membre pour stocker le canal à utiliser
+    int channel_;
 };
 
 }  // namespace ma::node

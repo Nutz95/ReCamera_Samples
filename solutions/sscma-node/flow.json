@@ -3,12 +3,6 @@
         "id": "recamera-001",
         "name": "ReCamera"
     },
-    "flash_config": {
-        "pre_capture_delay_ms": 50,
-        "flash_duration_ms": 10,
-        "flash_intensity": 255,
-        "disable_red_led_blinking": true
-    },
     "nodes": [
         {
             "id": "camera0",
@@ -20,7 +14,13 @@
                     "width": 1920,
                     "height": 1080,
                     "fps": 30
-                }
+                },
+                "raw_resolution": {
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 15
+                },
+                "attach_channel": "raw"
             }
         },
         {
@@ -29,23 +29,17 @@
             "config": {
                 "width": 640,
                 "height": 640,
-                "debug": true
+                "debug": true,
+                "enable_resize": false,
+                "enable_denoising": false,
+                "flash_intensity": 255,
+                "flash_duration_ms": 10,
+                "pre_capture_delay_ms": 50,
+                "disable_red_led_blinking": true,
+                "attach_channel": "raw"
             },
             "deps": [
                 "camera0"
-            ]
-        },
-        {
-            "id": "save0",
-            "type": "save",
-            "config": {
-                "path": "/userdata/IMAGES",
-                "format": "jpg",
-                "prefix": "processed_",
-                "count": 1
-            },
-            "deps": [
-                "preprocessor0"
             ]
         }
     ]

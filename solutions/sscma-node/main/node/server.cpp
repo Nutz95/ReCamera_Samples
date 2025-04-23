@@ -123,7 +123,7 @@ void NodeServer::onMessageStub(struct mosquitto* mosq, void* obj, const struct m
 void NodeServer::response(const std::string& id, const json& msg) {
 
     if (!m_connected) {
-        MA_LOGW(TAG, "response: skipped, not connected, id=%s msg=%s", id.c_str(), msg.dump().c_str());
+        // MA_LOGW(TAG, "response: skipped, not connected, id=%s msg=%s", id.c_str(), msg.dump().c_str());
         return;
     }
     // Guard guard(m_mutex);

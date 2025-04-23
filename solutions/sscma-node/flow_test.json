@@ -1,9 +1,7 @@
 {
-    "flash_config": {
-        "pre_capture_delay_ms": 50,
-        "flash_duration_ms": 10,
-        "flash_intensity": 255,
-        "disable_red_led_blinking": true
+    "device": {
+        "id": "recamera-001",
+        "name": "ReCamera"
     },
     "nodes": [
         {
@@ -11,16 +9,13 @@
             "type": "camera",
             "config": {
                 "option": "1080p",
-                "preview": false,
-                "websocket": false,
-                "audio": false,
+                "preview": true,
                 "jpeg_resolution": {
                     "width": 1920,
                     "height": 1080,
                     "fps": 30
                 }
-            },
-            "deps": []
+            }
         },
         {
             "id": "preprocessor0",
@@ -28,7 +23,13 @@
             "config": {
                 "width": 640,
                 "height": 640,
-                "debug": true
+                "debug": true,
+                "enable_resize": false,
+                "enable_denoising": false,
+                "flash_intensity": 255,
+                "flash_duration_ms": 10,
+                "pre_capture_delay_ms": 50,
+                "disable_red_led_blinking": true
             },
             "deps": [
                 "camera0"
