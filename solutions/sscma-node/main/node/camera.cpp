@@ -141,6 +141,10 @@ int CameraNode::vencCallback(void* pData, void* pArgs) {
 }
 
 int CameraNode::vpssCallback(void* pData, void* pArgs) {
+    if (!capture_requested.load()) {
+        // Libérer la frame matérielle si besoin (ex: CVI_SYS_Munmap si mappée)
+        return CVI_SUCCESS;
+    }
     ProfilerBlock pb("vpssCallback");
     APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
     VIDEO_FRAME_INFO_S* VpssFrame     = (VIDEO_FRAME_INFO_S*)pData;
@@ -171,21 +175,30 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
 
     // Mapping mémoire physique -> virtuelle pour RAW
     if (f->pu8VirAddr[0]) {
+        Thread::enterCritical();
         frame->img.physical = false;
         frame->img.data     = new uint8_t[frame->img.size];
         memcpy(frame->img.data, f->pu8VirAddr[0], frame->img.size);
+        Thread::exitCritical();
     } else {  // 150ns
         // Mapping mémoire physique
         uint64_t phyAddr = f->u64PhyAddr[0];
         uint32_t size    = frame->img.size;
-        void* virtAddr   = CVI_SYS_Mmap(phyAddr, size);
+
+        Thread::enterCritical();
+        void* virtAddr = CVI_SYS_Mmap(phyAddr, size);
+
         if (!virtAddr) {
             MA_LOGE(TAG, "CVI_SYS_Mmap failed! phyAddr=0x%lx size=%u", phyAddr, size);
             delete frame;
+            Thread::exitCritical();
             return CVI_FAILURE;
         }
-        frame->img.physical = true;
-        frame->img.data     = reinterpret_cast<uint8_t*>(virtAddr);
+        frame->img.physical = false;
+        frame->img.data     = new uint8_t[size];
+        memcpy(frame->img.data, virtAddr, size);
+        CVI_SYS_Munmap(virtAddr, size);
+        Thread::exitCritical();
     }
 
     frame->timestamp = Tick::current();
