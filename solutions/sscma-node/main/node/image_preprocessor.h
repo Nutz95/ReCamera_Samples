@@ -1,15 +1,13 @@
 #pragma once
 
 #include "camera.h"
+#include "led.h"  // Include led.h for static methods
 #include "node.h"
 #include "server.h"
 #include <atomic>
 #include <mutex>
 
 namespace ma::node {
-
-// Déclaration anticipée de la classe Led
-class Led;
 
 class ImagePreProcessorNode : public Node {
 
@@ -33,11 +31,6 @@ public:
         return capture_requested_.load();
     }
 
-    // Méthodes de contrôle des LEDs
-    bool controlLight(const std::string& led_name, bool turn_on, int intensity = -1);
-    bool controlAllLights(bool turn_on, int intensity = -1);
-    bool flashLight(const std::string& led_name, int intensity = -1, unsigned int duration_ms = 200);
-
     // Nouvelle méthode pour indiquer que le flash est actif (pour l'éteindre après capture)
     void setFlashActive(bool active, int intensity = -1) {
         flash_active_.store(active);
@@ -59,12 +52,6 @@ protected:
     bool debug_;                           // Mode debug pour afficher des informations supplémentaires
     int saved_image_count_;                // Compteur pour les images sauvegardées
     std::atomic<bool> capture_requested_;  // Nouveau flag pour indiquer si la capture est demandée par l'utilisateur
-
-    // Variables pour les LEDs
-    std::atomic<bool> lights_enabled_;   // État global des LEDs
-    std::atomic<bool> white_led_state_;  // État de la LED blanche
-    std::atomic<bool> red_led_state_;    // État de la LED rouge
-    std::atomic<bool> blue_led_state_;   // État de la LED bleue
 
     // Nouvelles variables pour gérer l'état du flash
     std::atomic<bool> flash_active_;  // Indique si le flash est actif et doit être éteint

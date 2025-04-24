@@ -3,7 +3,9 @@
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include <sys/time.h>  // Include for gettimeofday
 #include <unistd.h>
+
 namespace cv2 = cv;
 
 #include "image_preprocessor.h"
@@ -71,7 +73,7 @@ cv2::Mat resizeImage(const cv2::Mat& input_image, int target_width, int target_h
     int new_height = static_cast<int>(input_image.rows * scale);
 
     // Créer une image noire de taille cible
-    cv2::Mat output_image(target_height, target_width, CV_8UC3, cv2::Scalar(0, 0, 0));
+    cv2::Mat output_image(target_height, target_width, CV_8UC3, ::cv::Scalar(0, 0, 0));  // Use global namespace ::cv::Scalar
 
     // Redimensionner l'image originale
     cv2::Mat resized_image;
@@ -104,7 +106,7 @@ void saveProcessedImages(const cv2::Mat& input_image, const cv2::Mat& output_ima
 
     // Ajouter les millisecondes
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    ::gettimeofday(&tv, NULL);  // Use global namespace
     char timestamp_ms[80];
     snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
 
@@ -228,116 +230,35 @@ bool prepareAndPublishOutputFrame(const cv2::Mat& output_image, videoFrame* inpu
 }
 
 ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
-    : Node("image_preprocessor", std::move(id)),
+    : Node("image_preprocessor", id),  // Pass type and id to base constructor
       output_width_(640),
       output_height_(640),
-      enabled_(true),
+      enabled_(false),
       thread_(nullptr),
       camera_(nullptr),
-      input_frame_(10),
-      output_frame_(60),
       debug_(false),
       saved_image_count_(0),
       capture_requested_(false),
-      lights_enabled_(true),
-      white_led_state_(false),
-      red_led_state_(false),
-      blue_led_state_(false),
       flash_active_(false),
       flash_intensity_(-1),
       enable_resize_(true),
-      enable_denoising_(true),
+      enable_denoising_(false),
       flash_duration_ms_(200),
-      pre_capture_delay_ms_(50),
-      disable_red_led_blinking_(false) {}
+      pre_capture_delay_ms_(100),
+      disable_red_led_blinking_(false),
+      channel_(0) {
+    // Initialisation des paramètres de la caméra
+    // camera_->config(...);
+}
 
 ImagePreProcessorNode::~ImagePreProcessorNode() {
     onDestroy();
 }
 
-// Contrôle d'une LED spécifique
-bool ImagePreProcessorNode::controlLight(const std::string& led_name, bool turn_on, int intensity) {
-    if (!lights_enabled_.load() && turn_on) {
-        MA_LOGI(TAG, "LEDs sont désactivées globalement, impossible d'allumer %s", led_name.c_str());
-        return false;
-    }
-
-    try {
-        Led led(led_name);
-
-        if (turn_on) {
-            led.turnOn(intensity);
-            MA_LOGI(TAG, "LED %s allumée (intensité: %d)", led_name.c_str(), intensity);
-
-            // Mettre à jour l'état de la LED
-            if (led_name == "white")
-                white_led_state_.store(true);
-            else if (led_name == "red")
-                red_led_state_.store(true);
-            else if (led_name == "blue")
-                blue_led_state_.store(true);
-        } else {
-            led.turnOff();
-            MA_LOGI(TAG, "LED %s éteinte", led_name.c_str());
-
-            // Mettre à jour l'état de la LED
-            if (led_name == "white")
-                white_led_state_.store(false);
-            else if (led_name == "red")
-                red_led_state_.store(false);
-            else if (led_name == "blue")
-                blue_led_state_.store(false);
-        }
-        return true;
-    } catch (const std::exception& e) {
-        MA_LOGE(TAG, "Erreur lors du contrôle de la LED %s: %s", led_name.c_str(), e.what());
-        return false;
-    }
-}
-
-// Contrôle de toutes les LEDs
-bool ImagePreProcessorNode::controlAllLights(bool turn_on, int intensity) {
-    if (!lights_enabled_.load() && turn_on) {
-        MA_LOGI(TAG, "LEDs sont désactivées globalement");
-        return false;
-    }
-
-    bool success = true;
-    success &= controlLight("white", turn_on, intensity);
-    success &= controlLight("red", turn_on, intensity);
-    success &= controlLight("blue", turn_on, intensity);
-
-    return success;
-}
-
-// Flash d'une LED
-bool ImagePreProcessorNode::flashLight(const std::string& led_name, int intensity, unsigned int duration_ms) {
-    if (!lights_enabled_.load()) {
-        MA_LOGI(TAG, "LEDs sont désactivées globalement, impossible de flasher %s", led_name.c_str());
-        return false;
-    }
-
-    try {
-        Led led(led_name);
-
-        // Récupérer l'intensité maximale si nécessaire
-        if (intensity < 0) {
-            intensity = led.getMaxBrightness();
-        }
-
-        led.flash(intensity, duration_ms);
-        MA_LOGI(TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);
-        return true;
-    } catch (const std::exception& e) {
-        MA_LOGE(TAG, "Erreur lors du flash de la LED %s: %s", led_name.c_str(), e.what());
-        return false;
-    }
-}
-
 void ImagePreProcessorNode::threadEntry() {
     MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: started for node %s", id_.c_str());
     videoFrame* frame    = nullptr;
-    ma_tick_t last_debug = Tick::current();
+    ma_tick_t last_debug = Tick::current();  // Ensure correct method name
 
     server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}}));
 
@@ -366,7 +287,7 @@ void ImagePreProcessorNode::threadEntry() {
             // Réinitialiser le flag après avoir détecté la demande
             capture_requested_.store(false);
 
-            ma_tick_t start_time = Tick::current();  // Mesure du temps de traitement
+            ma_tick_t start_time = Tick::current();  // Ensure correct method name
 
             // Convertir la frame d'entrée en Mat OpenCV
             cv2::Mat raw_image = convertFrameToMat(frame);
@@ -398,7 +319,7 @@ void ImagePreProcessorNode::threadEntry() {
             }
 
             // Calculer le temps de traitement
-            ma_tick_t processing_time = Tick::current() - start_time;
+            ma_tick_t processing_time = Tick::current() - start_time;  // Ensure correct method name
 
             // Sauvegarder les images uniquement si le redimensionnement est activé
             // sinon, n'enregistre que l'image brute (ou débruitée)
@@ -429,7 +350,7 @@ void ImagePreProcessorNode::threadEntry() {
 
                 // Ajouter les millisecondes
                 struct timeval tv;
-                gettimeofday(&tv, NULL);
+                ::gettimeofday(&tv, NULL);  // Use global namespace
                 char timestamp_ms[80];
                 snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
 
@@ -439,7 +360,11 @@ void ImagePreProcessorNode::threadEntry() {
                 // Sauvegarder uniquement l'image brute (ou débruitée)
                 bool input_saved = saveImageToBmp(raw_image, input_filename, false);  // Sauvegarde en BMP
 
-                MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (processing time: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+                MA_LOGI(TAG,
+                        "Image brute sauvegardée: %s (%s) (processing time: %.2f ms)",
+                        input_filename.c_str(),
+                        input_saved ? "OK" : "ÉCHEC",
+                        Tick::toMilliseconds(processing_time));  // Use Tick::toMilliseconds
 
                 // Libérer la frame d'entrée
                 frame->release();
@@ -448,14 +373,12 @@ void ImagePreProcessorNode::threadEntry() {
             }
 
             // Après avoir traité l'image, éteindre le flash
-            if (white_led_state_.load()) {
-                // Éteindre la LED blanche qui sert de flash
-                MA_LOGI(TAG, "Traitement d'image terminé, extinction du flash");
-                controlLight("white", false);
+            // Éteindre la LED blanche qui sert de flash
+            MA_LOGI(TAG, "Traitement d\'image terminé, extinction du flash");
+            Led::controlLed("white", false);  // Utilisation de la méthode statique
 
-                // Flash de confirmation avec la LED bleue
-                flashLight("blue", flash_intensity_, 20);
-            }
+            // Flash de confirmation avec la LED bleue
+            Led::flashLed("blue", flash_intensity_, 20);  // Utilisation de la méthode statique
         } else {
             // Si aucune capture n'est demandée, libérer l'image immédiatement
             frame->release();
@@ -559,6 +482,7 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
 
 ma_err_t ImagePreProcessorNode::onControl(const std::string& control, const json& data) {
     Guard guard(mutex_);
+    json response;  // Declare response variable
 
     if (control == "enabled" && data.is_boolean()) {
         bool enabled = data.get<bool>();
@@ -593,101 +517,29 @@ ma_err_t ImagePreProcessorNode::onControl(const std::string& control, const json
         server_->response(id_, response);
     }
     // Nouvelle commande pour activer/désactiver le contrôle global des LEDs
-    else if (control == "lights_enabled" && data.is_boolean()) {
-        lights_enabled_.store(data.get<bool>());
-
-        // Si désactivé, éteindre toutes les LEDs
-        if (!lights_enabled_.load()) {
-            controlAllLights(false);
+    else if (control == "lights" && data.is_boolean()) {
+        // This control is deprecated as LED control is now static
+        MA_LOGW(NODE_TAG, "Control 'lights' is deprecated.");
+        response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_ENOTSUP}, {"data", "Control 'lights' is deprecated"}});  // Use MA_ENOTSUP
+        server_->response(id_, response);                                                                                                            // Send the response
+    } else if (control == "capture") {
+        // Cette commande est utilisée pour demander la capture d'une image
+        // Elle peut être appelée par un client pour déclencher la capture
+        // d'image à distance
+        if (data.is_boolean()) {
+            capture_requested_.store(data.get<bool>());
+            json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_OK}, {"data", capture_requested_.load()}});
+            server_->response(id_, response);
+        } else {
+            json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_EINVAL}, {"data", "Invalid data for capture"}});
+            server_->response(id_, response);
         }
-
-        json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_OK}, {"data", lights_enabled_.load()}});
-        server_->response(id_, response);
-    }
-    // Nouvelle commande pour allumer/éteindre une LED spécifique
-    else if (control == "light" && data.is_object()) {
-        bool success = false;
-        std::string led_name;
-        bool led_state = false;
-        int intensity  = -1;
-
-        if (data.contains("led") && data["led"].is_string()) {
-            led_name = data["led"].get<std::string>();
-
-            if (data.contains("state") && data["state"].is_boolean()) {
-                led_state = data["state"].get<bool>();
-
-                if (data.contains("intensity") && data["intensity"].is_number()) {
-                    intensity = data["intensity"].get<int>();
-                }
-
-                success = controlLight(led_name, led_state, intensity);
-            }
-        }
-
-        json response = json::object({{"type", MA_MSG_TYPE_RESP},
-                                      {"name", control},
-                                      {"code", success ? MA_OK : MA_EINVAL},
-                                      {"data", {{"led", led_name}, {"state", led_state}, {"intensity", intensity}, {"success", success}}}});
-        server_->response(id_, response);
-    }
-    // Nouvelle commande pour allumer/éteindre toutes les LEDs
-    else if (control == "all_lights" && data.is_object()) {
-        bool led_state = false;
-        int intensity  = -1;
-
-        if (data.contains("state") && data["state"].is_boolean()) {
-            led_state = data["state"].get<bool>();
-
-            if (data.contains("intensity") && data["intensity"].is_number()) {
-                intensity = data["intensity"].get<int>();
-            }
-        }
-
-        bool success = controlAllLights(led_state, intensity);
-
-        json response =
-            json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", success ? MA_OK : MA_EINVAL}, {"data", {{"state", led_state}, {"intensity", intensity}, {"success", success}}}});
-        server_->response(id_, response);
-    }
-    // Nouvelle commande pour faire flasher une LED
-    else if (control == "flash_light" && data.is_object()) {
-        bool success = false;
-        std::string led_name;
-        int intensity            = -1;
-        unsigned int duration_ms = 200;
-
-        if (data.contains("led") && data["led"].is_string()) {
-            led_name = data["led"].get<std::string>();
-
-            if (data.contains("intensity") && data["intensity"].is_number()) {
-                intensity = data["intensity"].get<int>();
-            }
-
-            if (data.contains("duration") && data["duration"].is_number()) {
-                duration_ms = data["duration"].get<unsigned int>();
-            }
-
-            success = flashLight(led_name, intensity, duration_ms);
-        }
-
-        json response = json::object({{"type", MA_MSG_TYPE_RESP},
-                                      {"name", control},
-                                      {"code", success ? MA_OK : MA_EINVAL},
-                                      {"data", {{"led", led_name}, {"intensity", intensity}, {"duration", duration_ms}, {"success", success}}}});
-        server_->response(id_, response);
-    }
-    // Demande d'état des LEDs
-    else if (control == "lights_state") {
-        json response = json::object({{"type", MA_MSG_TYPE_RESP},
-                                      {"name", control},
-                                      {"code", MA_OK},
-                                      {"data", {{"enabled", lights_enabled_.load()}, {"white", white_led_state_.load()}, {"red", red_led_state_.load()}, {"blue", blue_led_state_.load()}}}});
-        server_->response(id_, response);
     } else {
-        json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_ENOTSUP}, {"data", "Non supporté"}});
+        // Commande non reconnue
+        json response = json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_ENOTSUP}, {"data", "Commande non reconnue"}});
         server_->response(id_, response);
     }
+
     return MA_OK;
 }
 

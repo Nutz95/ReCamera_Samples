@@ -314,7 +314,7 @@ int main(int argc, char** argv) {
                     // S'assurer que toutes les LEDs sont éteintes avant de quitter
                     std::cout << "Extinction de toutes les LEDs...\n";
                     // Éteindre d'abord la LED blanche (utilisée pour le flash)
-                    imagePreProcessor->controlLight("white", false);
+                    Led::controlLed("white", false);
                     std::cout << "Toutes les LEDs ont été éteintes.\n";
                     running = false;
 
@@ -325,8 +325,8 @@ int main(int argc, char** argv) {
 
                     std::cout << "Activation du flash pour la capture...\n";
 
-                    // Activer le flash (LED blanche) en utilisant directement la méthode de ImagePreProcessorNode
-                    imagePreProcessor->controlLight("white", true, flashConfig.flash_intensity);
+                    // Activer le flash (LED blanche) en utilisant directement la méthode statique de Led
+                    Led::controlLed("white", true, flashConfig.flash_intensity);
 
                     // Attendre un court moment pour que la caméra s'adapte à l'éclairage
                     std::cout << "Attente de " << flashConfig.pre_capture_delay_ms << " ms avant la capture...\n";
