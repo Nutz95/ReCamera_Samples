@@ -8,6 +8,7 @@
 
 namespace cv2 = cv;
 
+#include "FlowConfigReader.h"
 #include "image_preprocessor.h"
 #include "led.h"
 #include "profiler.h"
@@ -50,8 +51,32 @@ bool saveImageToJpeg(const cv2::Mat& image, const std::string& filepath, int qua
     return result;
 }
 
+// Fonction utilitaire pour appliquer la balance des blancs sur le canal bleu
+cv2::Mat whiteBalance(const cv2::Mat& image_rgb, float red_factor, float green_factor, float blue_factor) {
+    if (blue_factor == 1.0f && red_factor == 1.0f && green_factor == 1.0f) {
+        // Aucun traitement, retourne l'image d'entrée directement
+        return image_rgb;
+    }
+    cv2::Mat balanced_image = image_rgb.clone();
+    if (balanced_image.channels() == 3) {
+        for (int y = 0; y < balanced_image.rows; ++y) {
+            for (int x = 0; x < balanced_image.cols; ++x) {
+                cv2::Vec3b& pixel = balanced_image.at<cv2::Vec3b>(y, x);
+                int red           = static_cast<int>(pixel[0] * red_factor);
+                int green         = static_cast<int>(pixel[1] * green_factor);
+                int blue          = static_cast<int>(pixel[2] * blue_factor);
+                pixel[0]          = cv2::saturate_cast<uchar>(red);
+                pixel[1]          = cv2::saturate_cast<uchar>(green);
+                pixel[2]          = cv2::saturate_cast<uchar>(blue);
+            }
+        }
+    }
+    MA_LOGI(TAG, "Applied white balance with blue factor: %.2f", blue_factor);
+    return balanced_image;
+}
+
 // Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
-bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool create_dir = true) {
+bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, float red_factor = 1.0f, float green_factor = 1.0f, float blue_factor = 1.0f, bool create_dir = true) {
     struct timeval tv_start, tv_end;
     gettimeofday(&tv_start, NULL);
     if (create_dir) {
@@ -67,9 +92,11 @@ bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool cre
             }
         }
     }
+    // Appliquer la balance des blancs sur le canal bleu
+    cv2::Mat balanced_image = whiteBalance(image, red_factor, green_factor, blue_factor);
     cv2::Mat brg_image;
-    cv2::cvtColor(image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
-    MA_LOGI(TAG, "Created Mat from RGB888 frame and converted to BGR");
+    cv2::cvtColor(balanced_image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
+    MA_LOGI(TAG, "Created Mat from RGB888 frame, applied white balance, and converted to BGR");
     bool result = cv2::imwrite(filepath, brg_image);
     gettimeofday(&tv_end, NULL);
     double elapsed_ms = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
@@ -322,6 +349,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     Thread::enterCritical();
     cv2::Mat raw_image = convertFrameToMat(frame);
     Thread::exitCritical();
+
     Led::controlLed("white", false);
 
     if (raw_image.empty()) {
@@ -344,6 +372,22 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         MA_LOGI(TAG, "Redimensionnement désactivé - Aucun redimensionnement appliqué");
     }
     ma_tick_t processing_time = Tick::current() - start_time;
+
+    // Lecture dynamique du paramètre blue_balance_factor depuis flow.json
+    float red_balance_factor   = 1.0f;
+    float green_balance_factor = 1.0f;
+    float blue_balance_factor  = 1.0f;
+    try {
+        FlowConfigReader flowConfigReader;
+        flowConfigReader.reload();
+        red_balance_factor   = flowConfigReader.getNodeConfigFloat(id_, "red_balance_factor", 1.0f);
+        green_balance_factor = flowConfigReader.getNodeConfigFloat(id_, "green_balance_factor", 1.0f);
+        blue_balance_factor  = flowConfigReader.getNodeConfigFloat(id_, "blue_balance_factor", 1.0f);
+    } catch (const std::exception& e) {
+        MA_LOGW(TAG, "Erreur lors de la lecture de blue_balance_factor dans flow.json: %s", e.what());
+    }
+    MA_LOGI(TAG, "Utilisation de blue_balance_factor=%.3f pour la balance des blancs", blue_balance_factor);
+
     if (enable_resize_) {
         saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
         prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
@@ -364,15 +408,11 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         char timestamp_ms[80];
         snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
         std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
-        bool input_saved           = saveImageToBmp(raw_image, input_filename, false);
-        // std::string input_filename = output_dir + timestamp_ms + "_raw" + ".jpg";
-        // bool input_saved = saveImageToJpeg(raw_image, input_filename, JPEG_QUALITY, false);
-
+        bool input_saved           = saveImageToBmp(raw_image, input_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
         MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
         frame->release();
         saved_image_count_++;
     }
-    MA_LOGI(TAG, "Traitement d'image terminé, extinction du flash");
     Led::flashLed("blue", flash_intensity_, 20);
 }
 

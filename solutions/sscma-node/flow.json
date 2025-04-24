@@ -36,7 +36,10 @@
                 "flash_duration_ms": 10,
                 "pre_capture_delay_ms": 50,
                 "disable_red_led_blinking": true,
-                "attach_channel": "raw"
+                "attach_channel": "raw",
+                "red_balance_factor": 0.8,
+                "green_balance_factor": 0.8,
+                "blue_balance_factor": 0.6
             },
             "deps": [
                 "camera0"
