@@ -10,6 +10,7 @@ namespace cv2 = cv;
 
 #include "image_preprocessor.h"
 #include "led.h"
+#include "profiler.h"
 
 namespace ma::node {
 
@@ -154,7 +155,7 @@ void saveProcessedImages(const cv2::Mat& input_image, const cv2::Mat& output_ima
 // Fonction pour convertir la frame d'entrée en Mat OpenCV
 cv2::Mat convertFrameToMat(videoFrame* frame) {
     cv2::Mat raw_image;
-
+    Profiler p("convertFrameToMat");
     // Ajouter un log pour voir quel format d'image est reçu
     MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d, channel=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical, frame->chn);
 
@@ -291,18 +292,20 @@ void ImagePreProcessorNode::threadEntry() {
         } else {
             handleNoCaptureRequested(frame);
         }
-    }
+        thread_->sleep(Tick::fromMilliseconds(2));
+    };
 }
 
 // Nouvelle méthode privée : fetchAndValidateFrame
 bool ImagePreProcessorNode::fetchAndValidateFrame(videoFrame*& frame) {
     // Attendre une image d'entrée avec timeout de 1 seconde
-    if (!input_frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromSeconds(1))) {
-        MA_LOGI(TAG, "No frame received for 1 sec (timeout)");
+    // Profiler p("fetchAndValidateFrame");
+    if (!input_frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromMicroseconds(500))) {
+        // MA_LOGI(TAG, "No frame received for 1 sec (timeout)");
         return false;
     }
     if (!enabled_) {
-        MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: frame release because not enabled");
+        // MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: frame release because not enabled");
         frame->release();
         return false;
     }
@@ -311,6 +314,7 @@ bool ImagePreProcessorNode::fetchAndValidateFrame(videoFrame*& frame) {
 
 // Nouvelle méthode privée : processCaptureRequest
 void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug) {
+    Profiler p("processCaptureRequest");
     MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture, processing frame");
     capture_requested_.store(false);
     ma_tick_t start_time = Tick::current();
@@ -325,6 +329,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         frame->release();
         return;
     }
+
     if (enable_denoising_) {
         MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
         raw_image = denoiseImage(raw_image);

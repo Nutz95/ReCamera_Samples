@@ -1,5 +1,8 @@
 #include "camera.h"
+#include "node/capture_flag.h"
 #include <alsa/asoundlib.h>  // Added ALSA header
+
+#include "profiler.h"
 
 namespace ma::node {
 
@@ -138,6 +141,7 @@ int CameraNode::vencCallback(void* pData, void* pArgs) {
 }
 
 int CameraNode::vpssCallback(void* pData, void* pArgs) {
+    ProfilerBlock pb("vpssCallback");
     APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
     VIDEO_FRAME_INFO_S* VpssFrame     = (VIDEO_FRAME_INFO_S*)pData;
     VIDEO_FRAME_S* f                  = &VpssFrame->stVFrame;
@@ -149,6 +153,13 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         MA_LOGW(TAG, "invalid chn %d", pstVencChnCfg->VencChn);
         return CVI_SUCCESS;
     }
+
+    // Ne traiter la frame que si capture_requested est à true
+    if (!capture_requested.load()) {
+        // Libérer la frame matérielle si besoin (ex: CVI_SYS_Munmap si mappée)
+        return CVI_SUCCESS;
+    }
+    capture_requested.store(false);
 
     videoFrame* frame = new videoFrame();
     frame->chn        = pstVencChnCfg->VencChn;
@@ -163,7 +174,7 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         frame->img.physical = false;
         frame->img.data     = new uint8_t[frame->img.size];
         memcpy(frame->img.data, f->pu8VirAddr[0], frame->img.size);
-    } else {
+    } else {  // 150ns
         // Mapping mémoire physique
         uint64_t phyAddr = f->u64PhyAddr[0];
         uint32_t size    = frame->img.size;
@@ -173,15 +184,10 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
             delete frame;
             return CVI_FAILURE;
         }
-        // allume la led bleue
-        // ma::node::Led::controlLed("blue", true, 1);
-        // MA_LOGI(TAG, "CVI_SYS_Mmap OK: phyAddr=0x%lx size=%u virtAddr=%p", phyAddr, size, virtAddr);
-        frame->img.physical = true;  // Marquer que cette mémoire doit être libérée avec CVI_SYS_Munmap
+        frame->img.physical = true;
         frame->img.data     = reinterpret_cast<uint8_t*>(virtAddr);
-
-        // Nous n'avons pas besoin de stocker l'adresse physique car elle n'est pas nécessaire pour CVI_SYS_Munmap
-        // qui prend uniquement l'adresse virtuelle et la taille
     }
+
     frame->timestamp = Tick::current();
     frame->fps       = channels_[pstVencChnCfg->VencChn].fps;
     frame->ref(channels_[pstVencChnCfg->VencChn].msgboxes.size());
@@ -190,16 +196,25 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
             frame->release();
         }
     }
+
     return CVI_SUCCESS;
 }
 
+int CameraNode::vencCallbackStub(void* pData, void* pArgs, void* pUserData) {
+    return reinterpret_cast<CameraNode*>(pUserData)->vencCallback(pData, pArgs);
+}
+
+int CameraNode::vpssCallbackStub(void* pData, void* pArgs, void* pUserData) {
+    APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
+    return reinterpret_cast<CameraNode*>(pUserData)->vpssCallback(pData, pArgs);
+}
 
 void CameraNode::threadEntry() {
     videoFrame* frame = nullptr;
     ma_tick_t last    = Tick::current();
 
     while (started_) {
-        if (frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromSeconds(1))) {
+        if (frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromMicroseconds(500))) {
             Thread::enterCritical();
             if (transport_ && frame->img.format == MA_PIXEL_FORMAT_H264) {
                 transport_->send(reinterpret_cast<const char*>(frame->img.data), frame->img.size);
@@ -219,6 +234,7 @@ void CameraNode::threadEntry() {
             frame->release();
             Thread::exitCritical();
         }
+        Thread::sleep(Tick::fromMilliseconds(2));
     }
 }
 
@@ -351,15 +367,6 @@ void CameraNode::threadAudioEntry() {
 
     snd_pcm_close(handle);
     delete[] buffer;
-}
-
-int CameraNode::vencCallbackStub(void* pData, void* pArgs, void* pUserData) {
-    return reinterpret_cast<CameraNode*>(pUserData)->vencCallback(pData, pArgs);
-}
-
-int CameraNode::vpssCallbackStub(void* pData, void* pArgs, void* pUserData) {
-    APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
-    return reinterpret_cast<CameraNode*>(pUserData)->vpssCallback(pData, pArgs);
 }
 
 void CameraNode::threadEntryStub(void* obj) {
@@ -689,26 +696,6 @@ ma_err_t CameraNode::onStart() {
     return MA_OK;
 }
 
-ma_err_t CameraNode::onStop() {
-    Guard guard(mutex_);
-    if (!started_) {
-        return MA_OK;
-    }
-    if (preview_) {
-        detach(CHN_JPEG, &frame_);
-    }
-    started_ = false;
-
-    if (thread_ != nullptr) {
-        thread_->join();
-    }
-    if (audio_ && thread_audio_ != nullptr) {
-        thread_audio_->join();
-    }
-    _stopCameraSequence();  // Replaced CAMERA_DEINIT()
-    return MA_OK;
-}
-
 ma_err_t CameraNode::config(int chn, int32_t width, int32_t height, int32_t fps, ma_pixel_format_t format, bool enabled) {
     MA_LOGI(TAG, "Configuring channel %d: width=%d, height=%d, fps=%d, format=%d, enabled=%s", chn, width, height, fps, format, enabled ? "true" : "false");
     Guard guard(mutex_);
@@ -774,6 +761,26 @@ void CameraNode::_stopCameraSequence() {
     Thread::sleep(Tick::fromSeconds(1));
     Thread::exitCritical();
     server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}}));
+}
+
+ma_err_t CameraNode::onStop() {
+    Guard guard(mutex_);
+    if (!started_) {
+        return MA_OK;
+    }
+    if (preview_) {
+        detach(CHN_JPEG, &frame_);
+    }
+    started_ = false;
+
+    if (thread_ != nullptr) {
+        thread_->join();
+    }
+    if (audio_ && thread_audio_ != nullptr) {
+        thread_audio_->join();
+    }
+    _stopCameraSequence();  // Replaced CAMERA_DEINIT()
+    return MA_OK;
 }
 
 }  // namespace ma::node

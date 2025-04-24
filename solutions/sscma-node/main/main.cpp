@@ -15,6 +15,7 @@
 #include "signal.h"
 
 #include "flash_config.h"
+#include "node/capture_flag.h"
 #include "node/image_preprocessor.h"
 #include "node/led.h"
 #include "node/server.h"
@@ -350,7 +351,7 @@ int startService(const std::string& config_file, bool daemon) {
                 MA_LOGI(TAG, "Toutes les LEDs ont été éteintes.");
                 running = false;
 
-            } else if (c == '\n') {  // Déclencher la capture sur Entrée // Correction: utiliser '\n' au lieu de '\\n'
+            } else if (c == '\n') {  // Déclencher la capture sur Entrée
                 // Lire les paramètres de configuration du flash à chaque capture
                 // pour permettre l'ajustement sans redémarrer l'application
                 FlashConfig currentFlashConfig = readFlashConfigFromFile();  // Renommé pour clarté
@@ -367,13 +368,15 @@ int startService(const std::string& config_file, bool daemon) {
                 MA_LOGI(TAG, "Capture d'image demandée...");
 
                 // Demander une capture d'image
-                // Le flash sera éteint automatiquement après le traitement dans image_preprocessor.cpp
-                imagePreProcessor->requestCapture();
+                capture_requested.store(true);
+                if (imagePreProcessor) {
+                    imagePreProcessor->requestCapture();
+                }
 
                 MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
                 MA_LOGI(TAG, "Pour modifier les paramètres du flash, éditez le fichier userdata/flow.json");
 
-                Thread::sleep(Tick::fromMilliseconds(1000));  // Donner du temps pour le traitement
+                Thread::sleep(Tick::fromMilliseconds(500));  // Donner du temps pour le traitement
                 // Ajout des instructions après chaque capture pour rappeler à l'utilisateur
                 MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
                 MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
@@ -382,7 +385,7 @@ int startService(const std::string& config_file, bool daemon) {
         }
 
         // Dormir un court instant pour éviter de surcharger le CPU
-        Thread::sleep(Tick::fromMilliseconds(10));
+        Thread::sleep(Tick::fromMilliseconds(100));
     }
 
     // Restaurer les paramètres du terminal
