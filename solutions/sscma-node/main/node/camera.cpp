@@ -1,6 +1,5 @@
-#include <alsa/asoundlib.h>
-
 #include "camera.h"
+#include <alsa/asoundlib.h>  // Added ALSA header
 
 namespace ma::node {
 
@@ -8,28 +7,6 @@ static constexpr char TAG[] = "ma::node::camera";
 
 const char* VIDEO_FORMATS[] = {"raw", "jpeg", "h264"};
 
-
-#define CAMERA_INIT()                                                                                                                        \
-    {                                                                                                                                        \
-        Thread::enterCritical();                                                                                                             \
-        Thread::sleep(Tick::fromMilliseconds(100));                                                                                          \
-        MA_LOGI(TAG, "start video");                                                                                                         \
-        startVideo();                                                                                                                        \
-        Thread::sleep(Tick::fromSeconds(1));                                                                                                 \
-        Thread::exitCritical();                                                                                                              \
-        server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}})); \
-    }
-
-#define CAMERA_DEINIT()                                                                                                                      \
-    {                                                                                                                                        \
-        Thread::enterCritical();                                                                                                             \
-        MA_LOGI(TAG, "stop video");                                                                                                          \
-        Thread::sleep(Tick::fromMilliseconds(100));                                                                                          \
-        deinitVideo();                                                                                                                       \
-        Thread::sleep(Tick::fromSeconds(1));                                                                                                 \
-        Thread::exitCritical();                                                                                                              \
-        server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}})); \
-    }
 
 CameraNode::CameraNode(std::string id)
     : Node("camera", std::move(id)),
@@ -594,9 +571,9 @@ ma_err_t CameraNode::onControl(const std::string& control, const json& data) {
         if (enabled_ != enabled) {
             enabled_.store(enabled);
             if (enabled_) {
-                CAMERA_INIT();
+                _startCameraSequence();  // Replaced CAMERA_INIT()
             } else {
-                CAMERA_DEINIT();
+                _stopCameraSequence();  // Replaced CAMERA_DEINIT()
             }
         }
     } else {
@@ -708,7 +685,7 @@ ma_err_t CameraNode::onStart() {
         thread_audio_->start(this);
     }
 
-    CAMERA_INIT();
+    _startCameraSequence();  // Replaced CAMERA_INIT()
     return MA_OK;
 }
 
@@ -728,7 +705,7 @@ ma_err_t CameraNode::onStop() {
     if (audio_ && thread_audio_ != nullptr) {
         thread_audio_->join();
     }
-    CAMERA_DEINIT();
+    _stopCameraSequence();  // Replaced CAMERA_DEINIT()
     return MA_OK;
 }
 
@@ -779,5 +756,24 @@ ma_err_t CameraNode::detach(int chn, MessageBox* msgbox) {
 
 REGISTER_NODE_SINGLETON("camera", CameraNode);
 
+void CameraNode::_startCameraSequence() {
+    Thread::enterCritical();
+    Thread::sleep(Tick::fromMilliseconds(100));
+    MA_LOGI(TAG, "start video");
+    startVideo();
+    Thread::sleep(Tick::fromSeconds(1));
+    Thread::exitCritical();
+    server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}}));
+}
+
+void CameraNode::_stopCameraSequence() {
+    Thread::enterCritical();
+    MA_LOGI(TAG, "stop video");
+    Thread::sleep(Tick::fromMilliseconds(100));
+    deinitVideo();
+    Thread::sleep(Tick::fromSeconds(1));
+    Thread::exitCritical();
+    server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}}));
+}
 
 }  // namespace ma::node

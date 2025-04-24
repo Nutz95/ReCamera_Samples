@@ -112,6 +112,8 @@ protected:
     static int vpssCallbackStub(void* pData, void* pArgs, void* pUserData);
 
 private:
+    void _startCameraSequence();  // Added private function declaration
+    void _stopCameraSequence();   // Added private function declaration
     void applyResolutionConfig(int chn, const json& config, const std::string& groupName);
     void configureDefaultChannels();
 
