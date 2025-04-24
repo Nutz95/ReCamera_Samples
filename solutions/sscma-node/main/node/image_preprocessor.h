@@ -41,6 +41,11 @@ protected:
     void threadEntry();
     static void threadEntryStub(void* obj);
 
+    // Méthodes privées pour découpage logique de threadEntry
+    bool fetchAndValidateFrame(videoFrame*& frame);
+    void processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug);
+    void handleNoCaptureRequested(videoFrame* frame);
+
 protected:
     int32_t output_width_;   // Largeur cible (640 par défaut)
     int32_t output_height_;  // Hauteur cible (640 par défaut)

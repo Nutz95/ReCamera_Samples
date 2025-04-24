@@ -24,24 +24,8 @@ static constexpr char TAG[] = "ma::node::image_preprocessor";
 // Fonction utilitaire pour sauvegarder une image au format JPEG
 bool saveImageToJpeg(const cv2::Mat& image, const std::string& filepath, int quality = JPEG_QUALITY, bool create_dir = true) {
     std::vector<int> im_params = {cv2::IMWRITE_JPEG_QUALITY, quality};
-    if (create_dir) {
-        size_t last_slash = filepath.find_last_of('/');
-        if (last_slash != std::string::npos) {
-            std::string dir = filepath.substr(0, last_slash);
-            struct stat st;
-            if (stat(dir.c_str(), &st) != 0) {
-                if (mkdir(dir.c_str(), 0777) != 0) {
-                    MA_LOGE(TAG, "Failed to create directory: %s", dir.c_str());
-                    return false;
-                }
-            }
-        }
-    }
-    return cv2::imwrite(filepath, image, im_params);
-}
-
-// Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
-bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool create_dir = true) {
+    struct timeval tv_start, tv_end;
+    gettimeofday(&tv_start, NULL);
     if (create_dir) {
         size_t last_slash = filepath.find_last_of('/');
         if (last_slash != std::string::npos) {
@@ -58,7 +42,38 @@ bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool cre
     cv2::Mat brg_image;
     cv2::cvtColor(image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
     MA_LOGI(TAG, "Created Mat from RGB888 frame and converted to BGR");
-    return cv2::imwrite(filepath, brg_image);
+    bool result = cv2::imwrite(filepath, brg_image, im_params);
+    gettimeofday(&tv_end, NULL);
+    double elapsed_ms = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
+    MA_LOGI(TAG, "saveImageToJpeg execution time: %.2f ms", elapsed_ms);
+    return result;
+}
+
+// Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
+bool saveImageToBmp(const cv2::Mat& image, const std::string& filepath, bool create_dir = true) {
+    struct timeval tv_start, tv_end;
+    gettimeofday(&tv_start, NULL);
+    if (create_dir) {
+        size_t last_slash = filepath.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            std::string dir = filepath.substr(0, last_slash);
+            struct stat st;
+            if (stat(dir.c_str(), &st) != 0) {
+                if (mkdir(dir.c_str(), 0777) != 0) {
+                    MA_LOGE(TAG, "Failed to create directory: %s", dir.c_str());
+                    return false;
+                }
+            }
+        }
+    }
+    cv2::Mat brg_image;
+    cv2::cvtColor(image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
+    MA_LOGI(TAG, "Created Mat from RGB888 frame and converted to BGR");
+    bool result = cv2::imwrite(filepath, brg_image);
+    gettimeofday(&tv_end, NULL);
+    double elapsed_ms = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
+    MA_LOGI(TAG, "saveImageToBmp execution time: %.2f ms", elapsed_ms);
+    return result;
 }
 
 // Fonction pour redimensionner une image à la taille cible avec des bandes noires
@@ -258,134 +273,107 @@ ImagePreProcessorNode::~ImagePreProcessorNode() {
 void ImagePreProcessorNode::threadEntry() {
     MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: started for node %s", id_.c_str());
     videoFrame* frame    = nullptr;
-    ma_tick_t last_debug = Tick::current();  // Ensure correct method name
+    ma_tick_t last_debug = Tick::current();
 
     server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "enabled"}, {"code", MA_OK}, {"data", enabled_.load()}}));
 
     MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: started_ = %s", started_ ? "true" : "false");
 
     while (started_) {
-        // Attendre une image d'entrée avec timeout de 1 seconde
-        if (!input_frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromSeconds(1))) {
-            MA_LOGI(TAG, "No frame received for 1 sec (timeout)");
+        if (!fetchAndValidateFrame(frame)) {
             continue;
         }
 
-        if (!enabled_) {
-            MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: frame release because not enabled");
-            frame->release();
-            continue;
-        }
-
-        Thread::enterCritical();
-
-        // Vérifier si l'utilisateur a demandé une capture d'image
         bool should_process = capture_requested_.load();
 
         if (should_process) {
-            MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture, processing frame");
-            // Réinitialiser le flag après avoir détecté la demande
-            capture_requested_.store(false);
-
-            ma_tick_t start_time = Tick::current();  // Ensure correct method name
-
-            // Convertir la frame d'entrée en Mat OpenCV
-            cv2::Mat raw_image = convertFrameToMat(frame);
-
-            // Vérifier si la conversion a réussi
-            if (raw_image.empty()) {
-                MA_LOGW(TAG, "Échec de conversion de la frame en Mat OpenCV");
-                frame->release();
-                Thread::exitCritical();
-                continue;
-            }
-
-            // Appliquer un filtre de débruitage uniquement si activé
-            if (enable_denoising_) {
-                MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
-                raw_image = denoiseImage(raw_image);
-            } else {
-                MA_LOGI(TAG, "Débruitage désactivé - Utilisation de l'image brute");
-            }
-
-            // Redimensionner l'image uniquement si activé
-            cv2::Mat output_image;
-            if (enable_resize_) {
-                MA_LOGI(TAG, "Redimensionnement activé - Application du redimensionnement");
-                output_image = resizeImage(raw_image, output_width_, output_height_);
-            } else {
-                MA_LOGI(TAG, "Redimensionnement désactivé - Aucun redimensionnement appliqué");
-                // Si le redimensionnement est désactivé, output_image reste vide
-            }
-
-            // Calculer le temps de traitement
-            ma_tick_t processing_time = Tick::current() - start_time;  // Ensure correct method name
-
-            // Sauvegarder les images uniquement si le redimensionnement est activé
-            // sinon, n'enregistre que l'image brute (ou débruitée)
-            if (enable_resize_) {
-                saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
-
-                // Préparer et publier la frame de sortie
-                prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
-            } else {
-                // Si le redimensionnement est désactivé, nous n'avons pas d'image de sortie
-                // Donc on ne publie pas de frame et on libère la frame d'entrée
-                MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
-
-                // Sauvegarder uniquement l'image brute
-                std::string output_dir = "/userdata/IMAGES/";
-                struct stat st;
-                if (stat(output_dir.c_str(), &st) != 0) {
-                    mkdir(output_dir.c_str(), 0777);
-                }
-
-                // Obtenir le timestamp courant au format demandé
-                time_t now = time(nullptr);
-                struct tm tm_info;
-                localtime_r(&now, &tm_info);
-
-                char timestamp[64];
-                strftime(timestamp, sizeof(timestamp), "%Y_%m_%d_%H_%M_%S", &tm_info);
-
-                // Ajouter les millisecondes
-                struct timeval tv;
-                ::gettimeofday(&tv, NULL);  // Use global namespace
-                char timestamp_ms[80];
-                snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
-
-                // Nom du fichier avec préfixe et timestamp
-                std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
-
-                // Sauvegarder uniquement l'image brute (ou débruitée)
-                bool input_saved = saveImageToBmp(raw_image, input_filename, false);  // Sauvegarde en BMP
-
-                MA_LOGI(TAG,
-                        "Image brute sauvegardée: %s (%s) (processing time: %.2f ms)",
-                        input_filename.c_str(),
-                        input_saved ? "OK" : "ÉCHEC",
-                        Tick::toMilliseconds(processing_time));  // Use Tick::toMilliseconds
-
-                // Libérer la frame d'entrée
-                frame->release();
-
-                saved_image_count_++;
-            }
-
-            // Après avoir traité l'image, éteindre le flash
-            // Éteindre la LED blanche qui sert de flash
-            MA_LOGI(TAG, "Traitement d\'image terminé, extinction du flash");
-            Led::controlLed("white", false);  // Utilisation de la méthode statique
-
-            // Flash de confirmation avec la LED bleue
-            Led::flashLed("blue", flash_intensity_, 20);  // Utilisation de la méthode statique
+            processCaptureRequest(frame, last_debug);
         } else {
-            // Si aucune capture n'est demandée, libérer l'image immédiatement
-            frame->release();
+            handleNoCaptureRequested(frame);
         }
-
-        Thread::exitCritical();
     }
+}
+
+// Nouvelle méthode privée : fetchAndValidateFrame
+bool ImagePreProcessorNode::fetchAndValidateFrame(videoFrame*& frame) {
+    // Attendre une image d'entrée avec timeout de 1 seconde
+    if (!input_frame_.fetch(reinterpret_cast<void**>(&frame), Tick::fromSeconds(1))) {
+        MA_LOGI(TAG, "No frame received for 1 sec (timeout)");
+        return false;
+    }
+    if (!enabled_) {
+        MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: frame release because not enabled");
+        frame->release();
+        return false;
+    }
+    return true;
+}
+
+// Nouvelle méthode privée : processCaptureRequest
+void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug) {
+    MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture, processing frame");
+    capture_requested_.store(false);
+    ma_tick_t start_time = Tick::current();
+
+    Thread::enterCritical();
+    cv2::Mat raw_image = convertFrameToMat(frame);
+    Thread::exitCritical();
+    Led::controlLed("white", false);
+
+    if (raw_image.empty()) {
+        MA_LOGW(TAG, "Échec de conversion de la frame en Mat OpenCV");
+        frame->release();
+        return;
+    }
+    if (enable_denoising_) {
+        MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
+        raw_image = denoiseImage(raw_image);
+    } else {
+        MA_LOGI(TAG, "Débruitage désactivé - Utilisation de l'image brute");
+    }
+    cv2::Mat output_image;
+    if (enable_resize_) {
+        MA_LOGI(TAG, "Redimensionnement activé - Application du redimensionnement");
+        output_image = resizeImage(raw_image, output_width_, output_height_);
+    } else {
+        MA_LOGI(TAG, "Redimensionnement désactivé - Aucun redimensionnement appliqué");
+    }
+    ma_tick_t processing_time = Tick::current() - start_time;
+    if (enable_resize_) {
+        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
+        prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+    } else {
+        MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
+        std::string output_dir = "/userdata/IMAGES/";
+        struct stat st;
+        if (stat(output_dir.c_str(), &st) != 0) {
+            mkdir(output_dir.c_str(), 0777);
+        }
+        time_t now = time(nullptr);
+        struct tm tm_info;
+        localtime_r(&now, &tm_info);
+        char timestamp[64];
+        strftime(timestamp, sizeof(timestamp), "%Y_%m_%d_%H_%M_%S", &tm_info);
+        struct timeval tv;
+        ::gettimeofday(&tv, NULL);
+        char timestamp_ms[80];
+        snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
+        std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
+        bool input_saved           = saveImageToBmp(raw_image, input_filename, false);
+        // std::string input_filename = output_dir + timestamp_ms + "_raw" + ".jpg";
+        // bool input_saved = saveImageToJpeg(raw_image, input_filename, JPEG_QUALITY, false);
+
+        MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+        frame->release();
+        saved_image_count_++;
+    }
+    MA_LOGI(TAG, "Traitement d'image terminé, extinction du flash");
+    Led::flashLed("blue", flash_intensity_, 20);
+}
+
+// Nouvelle méthode privée : handleNoCaptureRequested
+void ImagePreProcessorNode::handleNoCaptureRequested(videoFrame* frame) {
+    frame->release();
 }
 
 void ImagePreProcessorNode::threadEntryStub(void* obj) {
