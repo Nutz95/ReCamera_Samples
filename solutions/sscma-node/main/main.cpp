@@ -331,9 +331,9 @@ int startService(const std::string& config_file, bool daemon) {
 
     // Boucle principale avec invite utilisateur
     bool running = true;
-    std::cout << "\\n=== Application de capture d'images ===\\n";
-    std::cout << "Appuyez sur [Entrée] pour capturer une image\\n";
-    std::cout << "Appuyez sur 'q' pour quitter\\n";
+    MA_LOGI(TAG, "=== Application de capture d'images ===");
+    MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
+    MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
 
     while (running) {
         char c;
@@ -341,13 +341,13 @@ int startService(const std::string& config_file, bool daemon) {
 
         if (result > 0) {
             if (c == 'q' || c == 'Q') {
-                std::cout << "Demande de fermeture de l'application...\\n";
+                MA_LOGI(TAG, "Demande de fermeture de l'application...");
 
                 // S'assurer que toutes les LEDs sont éteintes avant de quitter
-                std::cout << "Extinction de toutes les LEDs...\\n";
+                MA_LOGI(TAG, "Extinction de toutes les LEDs...");
                 // Éteindre d'abord la LED blanche (utilisée pour le flash)
                 Led::controlLed("white", false);
-                std::cout << "Toutes les LEDs ont été éteintes.\\n";
+                MA_LOGI(TAG, "Toutes les LEDs ont été éteintes.");
                 running = false;
 
             } else if (c == '\n') {  // Déclencher la capture sur Entrée // Correction: utiliser '\n' au lieu de '\\n'
@@ -355,29 +355,28 @@ int startService(const std::string& config_file, bool daemon) {
                 // pour permettre l'ajustement sans redémarrer l'application
                 FlashConfig currentFlashConfig = readFlashConfigFromFile();  // Renommé pour clarté
 
-                std::cout << "Activation du flash pour la capture...\\n";
+                MA_LOGI(TAG, "Activation du flash pour la capture...");
 
                 // Activer le flash (LED blanche) en utilisant directement la méthode statique de Led
                 Led::controlLed("white", true, currentFlashConfig.flash_intensity);
 
                 // Attendre un court moment pour que la caméra s'adapte à l'éclairage
-                std::cout << "Attente de " << currentFlashConfig.pre_capture_delay_ms << " ms avant la capture...\\n";
+                MA_LOGI(TAG, "Attente de %dms avant la capture...", currentFlashConfig.pre_capture_delay_ms);
                 Thread::sleep(Tick::fromMilliseconds(currentFlashConfig.pre_capture_delay_ms));
 
-                std::cout << "Capture d'image demandée...\\n";
+                MA_LOGI(TAG, "Capture d'image demandée...");
 
                 // Demander une capture d'image
                 // Le flash sera éteint automatiquement après le traitement dans image_preprocessor.cpp
                 imagePreProcessor->requestCapture();
 
-                std::cout << "Capture en cours, le flash s'éteindra automatiquement après le traitement...\\n";
-                std::cout << "Pour modifier les paramètres du flash, éditez le fichier /userdata/flow.json\\n";
+                MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
+                MA_LOGI(TAG, "Pour modifier les paramètres du flash, éditez le fichier userdata/flow.json");
 
-                Thread::sleep(Tick::fromMilliseconds(500));  // Donner du temps pour le traitement
+                Thread::sleep(Tick::fromMilliseconds(1000));  // Donner du temps pour le traitement
                 // Ajout des instructions après chaque capture pour rappeler à l'utilisateur
-                std::cout << "\\n=== Application de capture d'images ===\\n";
-                std::cout << "Appuyez sur [Entrée] pour capturer une image\\n";
-                std::cout << "Appuyez sur 'q' pour quitter\\n";
+                MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
+                MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
             }
             // Ignorer les autres caractères
         }
