@@ -158,7 +158,7 @@ int startService(const std::string& config_file, bool daemon) {
     resetSystemResources();
 
     // Lire les paramètres de configuration du flash depuis flow.json
-    FlashConfig flashConfig = readFlashConfigFromFile();
+    FlashConfig flashConfig = readFlashConfigFromFile(config_file.c_str());
 
     // Désactiver le clignotement de la LED rouge si configuré
     if (flashConfig.disable_red_led_blinking) {
@@ -212,7 +212,7 @@ int startService(const std::string& config_file, bool daemon) {
 
     // Auto-start nodes defined in flow.json
     {
-        std::ifstream flowifs("/userdata/flow.json");
+        std::ifstream flowifs(config_file.c_str());
         if (flowifs.good()) {
             json flow;
             try {  // Ajouter une gestion d'erreur pour le parsing JSON
@@ -243,10 +243,10 @@ int startService(const std::string& config_file, bool daemon) {
                     }
                 }
             } catch (const json::parse_error& e) {
-                MA_LOGE(TAG, "Failed to parse /userdata/flow.json: %s", e.what());
+                MA_LOGE(TAG, "Failed to parse %s: %s", config_file.c_str(), e.what());
             }
         } else {
-            MA_LOGW(TAG, "Could not open /userdata/flow.json for autostart.");
+            MA_LOGW(TAG, "Could not open %s for autostart.", config_file.c_str());
         }
     }
 
@@ -261,7 +261,7 @@ int startService(const std::string& config_file, bool daemon) {
     // D'abord, vérifier dans flow.json pour trouver l'ID du noeud image_preprocessor
     std::string imageProcessorId = "";
     {
-        std::ifstream flowifs("/userdata/flow.json");
+        std::ifstream flowifs(config_file.c_str());
         if (flowifs.good()) {
             json flow;
             try {  // Ajouter une gestion d'erreur pour le parsing JSON
@@ -276,7 +276,7 @@ int startService(const std::string& config_file, bool daemon) {
                     }
                 }
             } catch (const json::parse_error& e) {
-                MA_LOGE(TAG, "Failed to parse /userdata/flow.json while searching for image_preprocessor ID: %s", e.what());
+                MA_LOGE(TAG, "Failed to parse %s while searching for image_preprocessor ID: %s", config_file.c_str(), e.what());
             }
         }
     }
@@ -285,9 +285,9 @@ int startService(const std::string& config_file, bool daemon) {
     if (!imageProcessorId.empty()) {
         node = NodeFactory::find(imageProcessorId);
         if (node) {
-            MA_LOGI(TAG, "Found node with ID %s from flow.json.", imageProcessorId.c_str());
+            MA_LOGI(TAG, "Found node with ID %s from %s.", imageProcessorId.c_str(), config_file.c_str());
         } else {
-            MA_LOGW(TAG, "Node with ID %s specified in flow.json not found.", imageProcessorId.c_str());
+            MA_LOGW(TAG, "Node with ID %s specified in %s not found.", imageProcessorId.c_str(), config_file.c_str());
         }
     }
 
@@ -354,12 +354,13 @@ int startService(const std::string& config_file, bool daemon) {
             } else if (c == '\n') {  // Déclencher la capture sur Entrée
                 // Lire les paramètres de configuration du flash à chaque capture
                 // pour permettre l'ajustement sans redémarrer l'application
-                FlashConfig currentFlashConfig = readFlashConfigFromFile();  // Renommé pour clarté
+                FlashConfig currentFlashConfig = readFlashConfigFromFile(config_file.c_str());  // Renommé pour clarté
 
-                MA_LOGI(TAG, "Activation du flash pour la capture...");
-
-                // Activer le flash (LED blanche) en utilisant directement la méthode statique de Led
-                Led::controlLed("white", true, currentFlashConfig.flash_intensity);
+                if (currentFlashConfig.enabled) {
+                    MA_LOGI(TAG, "Activation du flash pour la capture...");
+                    // Activer le flash (LED blanche) en utilisant directement la méthode statique de Led
+                    Led::controlLed("white", true, currentFlashConfig.flash_intensity);
+                }
 
                 // Attendre un court moment pour que la caméra s'adapte à l'éclairage
                 MA_LOGI(TAG, "Attente de %dms avant la capture...", currentFlashConfig.pre_capture_delay_ms);
