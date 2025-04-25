@@ -32,10 +32,6 @@
                 "debug": true,
                 "enable_resize": false,
                 "enable_denoising": false,
-                "flash_intensity": 255,
-                "flash_duration_ms": 10,
-                "pre_capture_delay_ms": 50,
-                "disable_red_led_blinking": true,
                 "attach_channel": "raw",
                 "red_balance_factor": 0.8,
                 "green_balance_factor": 0.8,
@@ -45,5 +41,12 @@
                 "camera0"
             ]
         }
-    ]
+    ],
+    "flash_config": {
+        "flash_enabled": true,
+        "flash_intensity": 255,
+        "flash_duration_ms": 10,
+        "pre_capture_delay_ms": 50,
+        "disable_red_led_blinking": true
+    }
 }
