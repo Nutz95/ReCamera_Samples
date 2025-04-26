@@ -9,11 +9,14 @@
 namespace cv2 = cv;
 
 #include "FlowConfigReader.h"
+#include "crop_config.h"
 #include "frame_utils.h"
 #include "image_preprocessor.h"
 #include "image_utils.h"
 #include "led.h"
+#include "preprocessor_config.h"  // Nouveau fichier d'en-tête
 #include "profiler.h"
+#include "white_balance_config.h"  // Ajout de l'include pour la nouvelle classe
 
 namespace ma::node {
 
@@ -26,7 +29,8 @@ static constexpr char TAG[] = "ma::node::image_preprocessor";
 
 
 // Fonction pour gérer la sauvegarde des images selon les règles demandées
-void saveProcessedImages(const cv2::Mat& input_image, const cv2::Mat& output_image, int& saved_count, ma_tick_t processing_time, ma_tick_t& last_debug) {
+void saveProcessedImages(
+    const cv2::Mat& input_image, const cv2::Mat& output_image, int& saved_count, ma_tick_t processing_time, ma_tick_t& last_debug, std::string file_extension = ".jpg", bool save_raw = false) {
     double processing_time_ms = Tick::toMilliseconds(processing_time);
 
     // Obtenir le timestamp courant au format demandé (YYYY_MM_DD_HH_MM_SS_MS)
@@ -51,20 +55,35 @@ void saveProcessedImages(const cv2::Mat& input_image, const cv2::Mat& output_ima
     }
 
     // Nom des fichiers avec préfixe et timestamp
-    std::string input_filename_jpeg = output_dir + timestamp_ms + "_raw" + ".jpg";
-    std::string output_filename     = output_dir + timestamp_ms + ".jpg";
+    std::string raw_filename    = output_dir + timestamp_ms + "_raw" + file_extension;
+    std::string output_filename = output_dir + timestamp_ms + file_extension;
+    if (file_extension == ".bmp") {
+        // Utilisation de la nouvelle classe WhiteBalanceConfig pour lire les paramètres
+        // On n'a plus besoin de passer l'ID du nœud car les paramètres sont au niveau racine
+        ma::WhiteBalanceConfig wbConfig = ma::readWhiteBalanceConfigFromFile();
+        float red_balance_factor        = wbConfig.red_balance_factor;
+        float green_balance_factor      = wbConfig.green_balance_factor;
+        float blue_balance_factor       = wbConfig.blue_balance_factor;
 
+        if (save_raw) {
+            bool input_saved = ImageUtils::saveImageToBmp(input_image, raw_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
+            MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", raw_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+        }
 
-    bool input_saved_jpeg = ImageUtils::saveImageToJpeg(input_image, input_filename_jpeg, JPEG_QUALITY, false);
-    bool output_saved     = ImageUtils::saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
+        ImageUtils::saveImageToBmp(output_image, output_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
+        MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
 
-    MA_LOGI(TAG,
-            "Images sauvegardées - input_jpeg: %s (%s), input_bmp: %s (%s), output_jpeg: %s (%s) (processing time: %.2f ms)",
-            input_filename_jpeg.c_str(),
-            input_saved_jpeg ? "OK" : "ÉCHEC",
-            output_filename.c_str(),
-            output_saved ? "OK" : "ÉCHEC",
-            processing_time_ms);
+    } else {
+        bool raw_saved    = ImageUtils::saveImageToJpeg(input_image, raw_filename, JPEG_QUALITY, false);
+        bool output_saved = ImageUtils::saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
+        MA_LOGI(TAG,
+                "Images sauvegardées - input: %s (%s), output: %s (%s) (processing time: %.2f ms)",
+                raw_filename.c_str(),
+                raw_saved ? "OK" : "ÉCHEC",
+                output_filename.c_str(),
+                output_saved ? "OK" : "ÉCHEC",
+                processing_time_ms);
+    }
 
     saved_count++;
 }
@@ -156,12 +175,30 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         return;
     }
 
+    // Charger la configuration du préprocesseur depuis le fichier flow.json
+    ma::PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(id_);
+
+    // Utiliser les paramètres de configuration lus du fichier
+    bool save_raw     = preprocessorCfg.save_raw;
+    enable_resize_    = preprocessorCfg.enable_resize;
+    enable_denoising_ = preprocessorCfg.enable_denoising;
+
+    MA_LOGI(TAG, "Configuration chargée: save_raw=%s, enable_resize=%s, enable_denoising=%s", save_raw ? "true" : "false", enable_resize_ ? "true" : "false", enable_denoising_ ? "true" : "false");
+
     if (enable_denoising_) {
         MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
         raw_image = ImageUtils::denoiseImage(raw_image);
     } else {
         MA_LOGI(TAG, "Débruitage désactivé - Utilisation de l'image brute");
     }
+
+    // Lecture dynamique des paramètres de crop
+    ma::CropConfig cropCfg = ma::readCropConfigFromFile();
+    if (cropCfg.enabled) {
+        MA_LOGI(TAG, "Cropping activé - Région [%d,%d] à [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+        raw_image = ImageUtils::cropImage(raw_image, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+    }
+
     cv2::Mat output_image;
     if (enable_resize_) {
         MA_LOGI(TAG, "Redimensionnement activé - Application du redimensionnement");
@@ -171,23 +208,10 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     }
     ma_tick_t processing_time = Tick::current() - start_time;
 
-    // Lecture dynamique du paramètre blue_balance_factor depuis flow.json
-    float red_balance_factor   = 1.0f;
-    float green_balance_factor = 1.0f;
-    float blue_balance_factor  = 1.0f;
-    try {
-        FlowConfigReader flowConfigReader;
-        flowConfigReader.reload();
-        red_balance_factor   = flowConfigReader.getNodeConfigFloat(id_, "red_balance_factor", 1.0f);
-        green_balance_factor = flowConfigReader.getNodeConfigFloat(id_, "green_balance_factor", 1.0f);
-        blue_balance_factor  = flowConfigReader.getNodeConfigFloat(id_, "blue_balance_factor", 1.0f);
-    } catch (const std::exception& e) {
-        MA_LOGW(TAG, "Erreur lors de la lecture de blue_balance_factor dans flow.json: %s", e.what());
-    }
-    MA_LOGI(TAG, "Utilisation de blue_balance_factor=%.3f pour la balance des blancs", blue_balance_factor);
 
     if (enable_resize_) {
-        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug);
+        // Passer le paramètre save_raw à la fonction saveProcessedImages
+        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug, save_raw ? ".bmp" : ".jpg", save_raw);
         FrameUtils::prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
     } else {
         MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
@@ -206,11 +230,24 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         char timestamp_ms[80];
         snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
         std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
-        bool input_saved           = ImageUtils::saveImageToBmp(raw_image, input_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
-        MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+
+
+        // Ne sauvegarder l'image brute que si save_raw est activé
+        if (save_raw) {
+            ma::WhiteBalanceConfig wbConfig = ma::readWhiteBalanceConfigFromFile();
+            float red_balance_factor        = wbConfig.red_balance_factor;
+            float green_balance_factor      = wbConfig.green_balance_factor;
+            float blue_balance_factor       = wbConfig.blue_balance_factor;
+
+            MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
+            bool input_saved = ImageUtils::saveImageToBmp(raw_image, input_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
+            MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+        } else {
+            MA_LOGI(TAG, "Sauvegarde de l'image brute désactivée (save_raw=false)");
+        }
         frame->release();
-        saved_image_count_++;
     }
+    saved_image_count_++;
     Led::flashLed("blue", flash_intensity_, 20);
 }
 

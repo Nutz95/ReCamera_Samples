@@ -140,4 +140,19 @@ cv2::Mat ImageUtils::denoiseImage(const cv2::Mat& input_image) {
         return input_image.clone();
     }
 }
+
+// Nouvelle fonction utilitaire pour crop une région définie par xmin, ymin, xmax, ymax
+cv2::Mat ImageUtils::cropImage(const cv2::Mat& input_image, int xmin, int ymin, int xmax, int ymax) {
+    // Ensure coordinates within bounds
+    int x1 = std::max(0, xmin);
+    int y1 = std::max(0, ymin);
+    int x2 = std::min(input_image.cols, xmax);
+    int y2 = std::min(input_image.rows, ymax);
+    if (x2 <= x1 || y2 <= y1) {
+        MA_LOGW(TAG, "Invalid crop region [%d,%d] to [%d,%d]", x1, y1, x2, y2);
+        return cv2::Mat();
+    }
+    cv2::Rect roi(x1, y1, x2 - x1, y2 - y1);
+    return input_image(roi).clone();
+}
 }  // namespace ma::node

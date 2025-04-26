@@ -20,5 +20,8 @@ public:
     static cv2::Mat resizeImage(const cv2::Mat& input_image, int target_width, int target_height);
 
     static cv2::Mat denoiseImage(const cv2::Mat& input_image);
+
+    // Nouvelle fonction pour crop une région définie par xmin, ymin, xmax, ymax
+    static cv2::Mat cropImage(const cv2::Mat& input_image, int xmin, int ymin, int xmax, int ymax);
 };
 }  // namespace ma::node

@@ -30,12 +30,10 @@
                 "width": 640,
                 "height": 640,
                 "debug": true,
-                "enable_resize": false,
+                "enable_resize": true,
                 "enable_denoising": false,
-                "attach_channel": "raw",
-                "red_balance_factor": 0.8,
-                "green_balance_factor": 0.8,
-                "blue_balance_factor": 0.6
+                "save_raw": true,
+                "attach_channel": "raw"
             },
             "deps": [
                 "camera0"
@@ -48,5 +46,17 @@
         "flash_duration_ms": 10,
         "pre_capture_delay_ms": 50,
         "disable_red_led_blinking": true
+    },
+    "crop_config": {
+        "enabled": true,
+        "xmin": 0,
+        "ymin": 375,
+        "xmax": 1470,
+        "ymax": 674
+    },
+    "white_balance_config": {
+        "red_balance_factor": 0.8,
+        "green_balance_factor": 0.8,
+        "blue_balance_factor": 0.6
     }
 }
