@@ -31,12 +31,6 @@ public:
         return capture_requested_.load();
     }
 
-    // Nouvelle méthode pour indiquer que le flash est actif (pour l'éteindre après capture)
-    void setFlashActive(bool active, int intensity = -1) {
-        flash_active_.store(active);
-        flash_intensity_ = intensity;
-    }
-
 protected:
     void threadEntry();
     static void threadEntryStub(void* obj);
