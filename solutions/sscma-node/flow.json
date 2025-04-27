@@ -29,7 +29,7 @@
             "config": {
                 "width": 640,
                 "height": 640,
-                "debug": true,
+                "debug": false,
                 "enable_resize": true,
                 "enable_denoising": false,
                 "save_raw": true,
@@ -41,14 +41,14 @@
         }
     ],
     "flash_config": {
-        "flash_enabled": true,
+        "flash_enabled": false,
         "flash_intensity": 255,
         "flash_duration_ms": 10,
         "pre_capture_delay_ms": 50,
         "disable_red_led_blinking": true
     },
     "crop_config": {
-        "enabled": true,
+        "enabled": false,
         "xmin": 0,
         "ymin": 375,
         "xmax": 1470,
@@ -58,5 +58,11 @@
         "red_balance_factor": 0.8,
         "green_balance_factor": 0.8,
         "blue_balance_factor": 0.6
+    },
+    "ai_config": {
+        "enabled": true,
+        "model_path": "/userdata/MODEL/model.cvimodel",
+        "model_lables_path": "/userdata/MODEL/model.json",
+        "threshold": 0.5
     }
 }

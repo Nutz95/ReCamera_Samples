@@ -1,5 +1,5 @@
 #include "flash_config.h"
-#include "node/led.h"
+#include "led.h"
 #include <fstream>
 
 namespace ma {

@@ -6,6 +6,7 @@
 
 #include "image_utils.h"
 #include "logger.hpp"
+#include "profiler.h"
 
 static constexpr char TAG[] = "ma::node::ImageUtils";
 
@@ -14,9 +15,8 @@ namespace cv2 = cv;
 namespace ma::node {
 
 bool ImageUtils::saveImageToJpeg(const cv2::Mat& image, const std::string& filepath, int quality, bool create_dir) {
+    Profiler p("saveImageToJpeg");
     std::vector<int> im_params = {cv2::IMWRITE_JPEG_QUALITY, quality};
-    struct timeval tv_start, tv_end;
-    gettimeofday(&tv_start, NULL);
     if (create_dir) {
         size_t last_slash = filepath.find_last_of('/');
         if (last_slash != std::string::npos) {
@@ -33,15 +33,12 @@ bool ImageUtils::saveImageToJpeg(const cv2::Mat& image, const std::string& filep
     cv2::Mat brg_image;
     cv2::cvtColor(image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
     MA_LOGI(TAG, "Created Mat from RGB888 frame and converted to BGR");
-    bool result = cv2::imwrite(filepath, brg_image, im_params);
-    gettimeofday(&tv_end, NULL);
-    double elapsed_ms = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
-    MA_LOGI(TAG, "saveImageToJpeg execution time: %.2f ms", elapsed_ms);
-    return result;
+    return cv2::imwrite(filepath, brg_image, im_params);
 }
 
 // Fonction utilitaire pour appliquer la balance des blancs sur le canal bleu
 cv2::Mat ImageUtils::whiteBalance(const cv2::Mat& image_rgb, float red_factor, float green_factor, float blue_factor) {
+    Profiler p("whiteBalance");
     if (blue_factor == 1.0f && red_factor == 1.0f && green_factor == 1.0f) {
         // Aucun traitement, retourne l'image d'entrée directement
         return image_rgb;
@@ -66,8 +63,7 @@ cv2::Mat ImageUtils::whiteBalance(const cv2::Mat& image_rgb, float red_factor, f
 
 // Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
 bool ImageUtils::saveImageToBmp(const cv2::Mat& image, const std::string& filepath, float red_factor, float green_factor, float blue_factor, bool create_dir) {
-    struct timeval tv_start, tv_end;
-    gettimeofday(&tv_start, NULL);
+    Profiler p("saveImageToBmp");
     if (create_dir) {
         size_t last_slash = filepath.find_last_of('/');
         if (last_slash != std::string::npos) {
@@ -86,15 +82,12 @@ bool ImageUtils::saveImageToBmp(const cv2::Mat& image, const std::string& filepa
     cv2::Mat brg_image;
     cv2::cvtColor(balanced_image, brg_image, cv2::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
     MA_LOGI(TAG, "Created Mat from RGB888 frame, applied white balance, and converted to BGR");
-    bool result = cv2::imwrite(filepath, brg_image);
-    gettimeofday(&tv_end, NULL);
-    double elapsed_ms = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
-    MA_LOGI(TAG, "saveImageToBmp execution time: %.2f ms", elapsed_ms);
-    return result;
+    return cv2::imwrite(filepath, brg_image);
 }
 
 // Fonction pour redimensionner une image à la taille cible avec des bandes noires
 cv2::Mat ImageUtils::resizeImage(const cv2::Mat& input_image, int target_width, int target_height) {
+    Profiler p("resizeImage");
     // Calculer le ratio pour le redimensionnement
     float scale_width  = static_cast<float>(target_width) / input_image.cols;
     float scale_height = static_cast<float>(target_height) / input_image.rows;
@@ -126,6 +119,7 @@ cv2::Mat ImageUtils::resizeImage(const cv2::Mat& input_image, int target_width, 
 
 // Fonction pour appliquer un filtre de débruitage à une image
 cv2::Mat ImageUtils::denoiseImage(const cv2::Mat& input_image) {
+    Profiler p("denoiseImage");
     cv2::Mat denoised_image;
     try {
         MA_LOGI(TAG, "Application du filtre de débruitage gaussien...");
@@ -143,6 +137,7 @@ cv2::Mat ImageUtils::denoiseImage(const cv2::Mat& input_image) {
 
 // Nouvelle fonction utilitaire pour crop une région définie par xmin, ymin, xmax, ymax
 cv2::Mat ImageUtils::cropImage(const cv2::Mat& input_image, int xmin, int ymin, int xmax, int ymax) {
+    Profiler p("cropImage");
     // Ensure coordinates within bounds
     int x1 = std::max(0, xmin);
     int y1 = std::max(0, ymin);

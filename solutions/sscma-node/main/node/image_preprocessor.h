@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ai_model_processor.h"  // Ajout de l'en-tête pour AIModelProcessor
 #include "camera.h"
 #include "led.h"  // Include led.h for static methods
 #include "node.h"
@@ -40,6 +41,9 @@ protected:
     void processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug);
     void handleNoCaptureRequested(videoFrame* frame);
 
+    // Nouvelle méthode pour la détection IA
+    void performAIDetection(cv2::Mat& output_image);
+
 protected:
     int32_t output_width_;   // Largeur cible (640 par défaut)
     int32_t output_height_;  // Hauteur cible (640 par défaut)
@@ -63,8 +67,16 @@ protected:
     unsigned int pre_capture_delay_ms_;  // Délai avant capture
     bool disable_red_led_blinking_;      // Désactiver le clignotement de la LED rouge
 
+
     // Nouveau membre pour stocker le canal à utiliser
     int channel_;
+
+    // Nouveau membre pour le traitement AI
+    ma::AIModelProcessor* ai_processor_;
+    std::string ai_model_path_;
+    std::string ai_model_labels_path_;
+    bool enable_ai_detection_;
+    float ai_detection_threshold_;  // Seuil de détection pour le modèle AI
 };
 
 }  // namespace ma::node

@@ -14,8 +14,8 @@
 
 #include "signal.h"
 
-#include "flash_config.h"
 #include "node/capture_flag.h"
+#include "node/flash_config.h"
 #include "node/image_preprocessor.h"
 #include "node/led.h"
 #include "node/server.h"

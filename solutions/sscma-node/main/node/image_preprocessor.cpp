@@ -9,7 +9,9 @@
 namespace cv2 = cv;
 
 #include "FlowConfigReader.h"
+#include "ai_config.h"
 #include "crop_config.h"
+#include "flash_config.h"
 #include "frame_utils.h"
 #include "image_preprocessor.h"
 #include "image_utils.h"
@@ -74,7 +76,10 @@ void saveProcessedImages(
         MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
 
     } else {
-        bool raw_saved    = ImageUtils::saveImageToJpeg(input_image, raw_filename, JPEG_QUALITY, false);
+        bool raw_saved = false;
+        if (save_raw) {
+            raw_saved = ImageUtils::saveImageToJpeg(input_image, raw_filename, JPEG_QUALITY, false);
+        }
         bool output_saved = ImageUtils::saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
         MA_LOGI(TAG,
                 "Images sauvegardées - input: %s (%s), output: %s (%s) (processing time: %.2f ms)",
@@ -106,13 +111,22 @@ ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
       flash_duration_ms_(200),
       pre_capture_delay_ms_(100),
       disable_red_led_blinking_(false),
-      channel_(0) {
+      channel_(0),
+      ai_processor_(nullptr),
+      ai_model_path_(""),
+      enable_ai_detection_(false) {
     // Initialisation des paramètres de la caméra
     // camera_->config(...);
 }
 
 ImagePreProcessorNode::~ImagePreProcessorNode() {
     onDestroy();
+
+    // Nettoyer le processeur IA
+    if (ai_processor_ != nullptr) {
+        delete ai_processor_;
+        ai_processor_ = nullptr;
+    }
 }
 
 void ImagePreProcessorNode::threadEntry() {
@@ -182,36 +196,44 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     bool save_raw     = preprocessorCfg.save_raw;
     enable_resize_    = preprocessorCfg.enable_resize;
     enable_denoising_ = preprocessorCfg.enable_denoising;
+    debug_            = preprocessorCfg.debug;
 
     MA_LOGI(TAG, "Configuration chargée: save_raw=%s, enable_resize=%s, enable_denoising=%s", save_raw ? "true" : "false", enable_resize_ ? "true" : "false", enable_denoising_ ? "true" : "false");
 
     if (enable_denoising_) {
-        MA_LOGI(TAG, "Débruitage activé - Application du filtre de débruitage");
+        MA_LOGI(TAG, "Denoising enabled - Application du filtre de débruitage");
         raw_image = ImageUtils::denoiseImage(raw_image);
     } else {
-        MA_LOGI(TAG, "Débruitage désactivé - Utilisation de l'image brute");
+        MA_LOGI(TAG, "Denoising disabled - Utilisation de l'image brute");
     }
 
     // Lecture dynamique des paramètres de crop
     ma::CropConfig cropCfg = ma::readCropConfigFromFile();
     if (cropCfg.enabled) {
-        MA_LOGI(TAG, "Cropping activé - Région [%d,%d] à [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+        MA_LOGI(TAG, "Cropping enabled - Region [%d,%d] à [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
         raw_image = ImageUtils::cropImage(raw_image, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
     }
 
     cv2::Mat output_image;
     if (enable_resize_) {
-        MA_LOGI(TAG, "Redimensionnement activé - Application du redimensionnement");
+        MA_LOGI(TAG, "Resizing enabled - applying resizing to %dx%d", output_width_, output_height_);
         output_image = ImageUtils::resizeImage(raw_image, output_width_, output_height_);
     } else {
-        MA_LOGI(TAG, "Redimensionnement désactivé - Aucun redimensionnement appliqué");
+        MA_LOGI(TAG, "Resizing disabled");
+        output_image = raw_image.clone();
     }
-    ma_tick_t processing_time = Tick::current() - start_time;
 
+    MA_LOGI(TAG, "Checking to perform AI detection: %s, model loaded: %s", enable_ai_detection_ ? "true" : "false", ai_processor_->isModelLoaded() ? "true" : "false");
+    // Exécuter la détection IA si elle est activée
+    if (enable_ai_detection_ && ai_processor_ != nullptr && ai_processor_->isModelLoaded()) {
+        performAIDetection(output_image);
+    }
+
+    ma_tick_t processing_time = Tick::current() - start_time;
 
     if (enable_resize_) {
         // Passer le paramètre save_raw à la fonction saveProcessedImages
-        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug, save_raw ? ".bmp" : ".jpg", save_raw);
+        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug, save_raw ? ".bmp" : ".jpg", debug_);
         FrameUtils::prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
     } else {
         MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
@@ -263,50 +285,54 @@ void ImagePreProcessorNode::threadEntryStub(void* obj) {
 ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
     Guard guard(mutex_);
 
-    // Configuration de la résolution de sortie
-    if (config.contains("width") && config["width"].is_number_integer()) {
-        output_width_ = config["width"].get<int32_t>();
-    }
+    PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(id_);
+    FlashConfig flashCfg               = ma::readFlashConfigFromFile();
 
-    if (config.contains("height") && config["height"].is_number_integer()) {
-        output_height_ = config["height"].get<int32_t>();
-    }
+    output_width_  = preprocessorCfg.width;
+    output_height_ = preprocessorCfg.height;
+    debug_         = preprocessorCfg.debug;
 
-    // Configuration du mode debug
-    if (config.contains("debug") && config["debug"].is_boolean()) {
-        debug_ = config["debug"].get<bool>();
-    }
+    flash_intensity_          = flashCfg.flash_intensity;
+    flash_duration_ms_        = flashCfg.flash_duration_ms;
+    pre_capture_delay_ms_     = flashCfg.pre_capture_delay_ms;
+    disable_red_led_blinking_ = flashCfg.disable_red_led_blinking;
 
-    // Configuration des options de traitement d'image
-    if (config.contains("enable_resize") && config["enable_resize"].is_boolean()) {
-        enable_resize_ = config["enable_resize"].get<bool>();
-        MA_LOGI(TAG, "Redimensionnement d'image %s", enable_resize_ ? "activé" : "désactivé");
-    }
+    AIConfig aiCfg          = ma::readAIConfigFromFile();
+    enable_ai_detection_    = aiCfg.enabled;
+    ai_model_path_          = aiCfg.model_path;
+    ai_model_labels_path_   = aiCfg.model_labels_path;
+    ai_detection_threshold_ = aiCfg.threshold;
 
-    if (config.contains("enable_denoising") && config["enable_denoising"].is_boolean()) {
-        enable_denoising_ = config["enable_denoising"].get<bool>();
-        MA_LOGI(TAG, "Débruitage d'image %s", enable_denoising_ ? "activé" : "désactivé");
-    }
 
-    // Lire les configurations du flash directement depuis la configuration du nœud
-    if (config.contains("flash_intensity") && config["flash_intensity"].is_number_integer()) {
-        flash_intensity_ = config["flash_intensity"].get<int>();
-        MA_LOGI(TAG, "Flash intensity configurée: %d", flash_intensity_);
-    }
+    if (enable_ai_detection_ && !ai_model_path_.empty()) {
+        // Initialiser le processeur IA
+        if (ai_processor_ == nullptr) {
+            ai_processor_ = new ma::AIModelProcessor();
+            MA_LOGI(TAG, "AI processor created sucessfuly");
+        }
 
-    if (config.contains("flash_duration_ms") && config["flash_duration_ms"].is_number_integer()) {
-        flash_duration_ms_ = config["flash_duration_ms"].get<unsigned int>();
-        MA_LOGI(TAG, "Flash duration configurée: %u ms", flash_duration_ms_);
-    }
-
-    if (config.contains("pre_capture_delay_ms") && config["pre_capture_delay_ms"].is_number_integer()) {
-        pre_capture_delay_ms_ = config["pre_capture_delay_ms"].get<unsigned int>();
-        MA_LOGI(TAG, "Pre-capture delay configuré: %u ms", pre_capture_delay_ms_);
-    }
-
-    if (config.contains("disable_red_led_blinking") && config["disable_red_led_blinking"].is_boolean()) {
-        disable_red_led_blinking_ = config["disable_red_led_blinking"].get<bool>();
-        MA_LOGI(TAG, "Désactivation du clignotement LED rouge: %s", disable_red_led_blinking_ ? "true" : "false");
+        if (ai_processor_) {
+            // Initialiser le moteur et charger le modèle
+            ma_err_t ret = ai_processor_->initEngine();
+            if (ret == MA_OK) {
+                ret = ai_processor_->loadModel(ai_model_path_);
+                if (ret != MA_OK) {
+                    MA_LOGE(TAG, "Error when loading AI model: %s", ai_model_path_.c_str());
+                    delete ai_processor_;
+                    ai_processor_        = nullptr;
+                    enable_ai_detection_ = false;
+                } else {
+                    // Configurer le seuil de détection si spécifié
+                    ai_processor_->setDetectionThreshold(ai_detection_threshold_);
+                    MA_LOGI(TAG, "Configured detection Threashold: %.2f", ai_detection_threshold_);
+                }
+            } else {
+                MA_LOGE(TAG, "Error initializing AI engine");
+                delete ai_processor_;
+                ai_processor_        = nullptr;
+                enable_ai_detection_ = false;
+            }
+        }
     }
 
     // Lire le canal à utiliser depuis la configuration (raw ou jpeg)
@@ -343,7 +369,13 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
     server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", "create"}, {"code", MA_OK}, {"data", {{"width", output_width_}, {"height", output_height_}}}}));
 
     // --- TRACE ---
-    MA_LOGI(TAG, "ImagePreProcessorNode.onCreate: width=%d height=%d debug=%s channel=%d", output_width_, output_height_, debug_ ? "true" : "false", channel_);
+    MA_LOGI(TAG,
+            "ImagePreProcessorNode.onCreate: width=%d height=%d debug=%s channel=%d ai_enabled=%s",
+            output_width_,
+            output_height_,
+            debug_ ? "true" : "false",
+            channel_,
+            enable_ai_detection_ ? "true" : "false");
 
     return MA_OK;
 }
@@ -507,6 +539,53 @@ ma_err_t ImagePreProcessorNode::onStop() {
     }
 
     return MA_OK;
+}
+
+// Méthode pour la détection IA
+void ImagePreProcessorNode::performAIDetection(cv2::Mat& output_image) {
+    Profiler p("ImagePreProcessorNode: performAIDetection");
+    MA_LOGI(TAG, "AI detection enabled. Performing detection...");
+
+    // Convertir l'image en RGB si elle est en BGR (OpenCV utilise BGR par défaut)
+    cv2::Mat rgb_image;
+    /*if (output_image.channels() == 3) {
+        MA_LOGI(TAG, "Image is a BGR image, converting to RGB");
+        // Vérifier si l'image est déjà au format RGB
+        cv2::Mat channels[3];
+        cv2::split(output_image, channels);
+
+        // Si le premier canal est B et le dernier canal est R, c'est du BGR
+        if (cv2::countNonZero(channels[0] - channels[2]) > 0) {
+            cv2::cvtColor(output_image, rgb_image, cv2::COLOR_BGR2RGB);
+        } else {
+            rgb_image = output_image.clone();
+        }
+    } else {*/
+    // MA_LOGI(TAG, "Image is already an RGB image, using original image");
+    rgb_image = output_image.clone();
+    //}
+
+    MA_LOGI(TAG, "Running AI detection on image of size: %dx%d", rgb_image.cols, rgb_image.rows);
+    // Exécuter la détection d'objets
+    ma_err_t ret = ai_processor_->runDetection(rgb_image);
+    if (ret == MA_OK) {
+        MA_LOGI(TAG, "AI detection completed successfully");
+        // Dessiner les résultats de détection sur l'image
+        ai_processor_->drawDetectionResults(output_image);
+
+        // Afficher les statistiques de performance
+        ma_perf_t perf = ai_processor_->getPerformanceStats();
+        MA_LOGI(TAG, "IA Performance: prétraitement=%ldms, inférence=%ldms, post-traitement=%ldms", perf.preprocess, perf.inference, perf.postprocess);
+
+        // Afficher les résultats de détection
+        auto results = ai_processor_->getDetectionResults();
+        MA_LOGI(TAG, "Détection IA: %zu objets détectés", results.size());
+        for (const auto& result : results) {
+            MA_LOGI(TAG, "  - Objet: classe=%d, score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, result.score, result.x, result.y, result.w, result.h);
+        }
+    } else {
+        MA_LOGE(TAG, "Error when performing detection: code=%d", ret);
+    }
 }
 
 // Enregistrer le noeud dans la fabrique

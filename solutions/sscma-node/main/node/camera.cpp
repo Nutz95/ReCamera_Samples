@@ -581,9 +581,9 @@ ma_err_t CameraNode::onControl(const std::string& control, const json& data) {
     } else if (control == "light" && data.is_number()) {
         light_ = data.get<int>();
         if (light_ == 0) {
-            system("echo 0 > /sys/devices/platform/leds/leds/white/brightness");
+            Led::controlLed("white", false);
         } else {
-            system("echo 1 > /sys/devices/platform/leds/leds/white/brightness");
+            Led::controlLed("white", true);
         }
         server_->response(id_, json::object({{"type", MA_MSG_TYPE_RESP}, {"name", control}, {"code", MA_OK}, {"data", {"light", light_}}}));
     } else if (control == "enabled" && data.is_boolean()) {
@@ -652,9 +652,9 @@ ma_err_t CameraNode::onStart() {
     }
 
     if (light_ == 0) {
-        system("echo 0 > /sys/devices/platform/leds/leds/white/brightness");
+        Led::controlLed("white", false);
     } else {
-        system("echo 1 > /sys/devices/platform/leds/leds/white/brightness");
+        Led::controlLed("white", true);
     }
 
     for (int i = 0; i < CHN_MAX; i++) {
