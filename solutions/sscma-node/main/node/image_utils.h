@@ -23,5 +23,8 @@ public:
 
     // Nouvelle fonction pour crop une région définie par xmin, ymin, xmax, ymax
     static cv2::Mat cropImage(const cv2::Mat& input_image, int xmin, int ymin, int xmax, int ymax);
+
+    // Nouvelle fonction pour effectuer une rotation de 90° dans le sens inverse des aiguilles d'une montre
+    static cv2::Mat rotate90CCW(const cv2::Mat& input_image);
 };
 }  // namespace ma::node

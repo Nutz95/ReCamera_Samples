@@ -85,6 +85,7 @@ bool ImageUtils::saveImageToBmp(const cv2::Mat& image, const std::string& filepa
     return cv2::imwrite(filepath, brg_image);
 }
 
+
 // Fonction pour redimensionner une image à la taille cible avec des bandes noires
 cv2::Mat ImageUtils::resizeImage(const cv2::Mat& input_image, int target_width, int target_height) {
     Profiler p("resizeImage");
@@ -149,5 +150,13 @@ cv2::Mat ImageUtils::cropImage(const cv2::Mat& input_image, int xmin, int ymin, 
     }
     cv2::Rect roi(x1, y1, x2 - x1, y2 - y1);
     return input_image(roi).clone();
+}
+
+// Fonction pour effectuer une rotation de 90° dans le sens inverse des aiguilles d'une montre
+cv2::Mat ImageUtils::rotate90CCW(const cv2::Mat& input_image) {
+    Profiler p("rotate90CCW");
+    cv2::Mat rotated_image;
+    cv2::rotate(input_image, rotated_image, cv2::ROTATE_90_COUNTERCLOCKWISE);
+    return rotated_image;
 }
 }  // namespace ma::node

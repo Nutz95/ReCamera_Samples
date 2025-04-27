@@ -11,6 +11,7 @@ struct PreprocessorConfig {
     bool save_raw              = false;   // Indicateur pour sauvegarder l'image brute
     bool enable_resize         = true;    // Indicateur pour activer le redimensionnement
     bool enable_denoising      = false;   // Indicateur pour activer le débruitage
+    bool enable_ccw_rotation   = false;   // Indicateur pour activer le débruitage
     int width                  = 640;     // Largeur de sortie par défaut
     int height                 = 640;     // Hauteur de sortie par défaut
     bool debug                 = false;   // Mode debug

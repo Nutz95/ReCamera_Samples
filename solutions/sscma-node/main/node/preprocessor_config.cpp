@@ -30,20 +30,22 @@ PreprocessorConfig readPreprocessorConfigFromFile(const std::string& nodeId, con
                 fileLoaded = true;
 
                 // Utilisation des méthodes de FlowConfigReader pour accéder aux paramètres du nœud
-                config.save_raw         = reader.getNodeConfigBool(nodeId, "save_raw", config.save_raw);
-                config.enable_resize    = reader.getNodeConfigBool(nodeId, "enable_resize", config.enable_resize);
-                config.enable_denoising = reader.getNodeConfigBool(nodeId, "enable_denoising", config.enable_denoising);
-                config.width            = reader.getNodeConfigInt(nodeId, "width", config.width);
-                config.height           = reader.getNodeConfigInt(nodeId, "height", config.height);
-                config.debug            = reader.getNodeConfigBool(nodeId, "debug", config.debug);
-                config.attach_channel   = reader.getNodeConfigString(nodeId, "attach_channel", config.attach_channel);
+                config.save_raw            = reader.getNodeConfigBool(nodeId, "save_raw", config.save_raw);
+                config.enable_resize       = reader.getNodeConfigBool(nodeId, "enable_resize", config.enable_resize);
+                config.enable_denoising    = reader.getNodeConfigBool(nodeId, "enable_denoising", config.enable_denoising);
+                config.enable_ccw_rotation = reader.getNodeConfigBool(nodeId, "enable_ccw_rotation", config.enable_ccw_rotation);
+                config.width               = reader.getNodeConfigInt(nodeId, "width", config.width);
+                config.height              = reader.getNodeConfigInt(nodeId, "height", config.height);
+                config.debug               = reader.getNodeConfigBool(nodeId, "debug", config.debug);
+                config.attach_channel      = reader.getNodeConfigString(nodeId, "attach_channel", config.attach_channel);
 
                 MA_LOGI(TAG,
-                        "Preprocessor configuration loaded for node '%s': save_raw=%s, enable_resize=%s, enable_denoising=%s",
+                        "Preprocessor configuration loaded for node '%s': save_raw=%s, enable_resize=%s, enable_denoising=%s, enable_ccw_rotation=%s",
                         nodeId.c_str(),
                         config.save_raw ? "true" : "false",
                         config.enable_resize ? "true" : "false",
-                        config.enable_denoising ? "true" : "false");
+                        config.enable_denoising ? "true" : "false",
+                        config.enable_ccw_rotation ? "true" : "false");
 
                 break;
             }

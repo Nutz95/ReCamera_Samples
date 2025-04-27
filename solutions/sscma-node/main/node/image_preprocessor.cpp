@@ -214,6 +214,11 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         raw_image = ImageUtils::cropImage(raw_image, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
     }
 
+    if (preprocessorCfg.enable_ccw_rotation) {
+        MA_LOGI(TAG, "Rotation CCW enabled - Rotating image 90° counter clockwise");
+        raw_image = ImageUtils::rotate90CCW(raw_image);
+    }
+
     cv2::Mat output_image;
     if (enable_resize_) {
         MA_LOGI(TAG, "Resizing enabled - applying resizing to %dx%d", output_width_, output_height_);
@@ -548,20 +553,7 @@ void ImagePreProcessorNode::performAIDetection(cv2::Mat& output_image) {
 
     // Convertir l'image en RGB si elle est en BGR (OpenCV utilise BGR par défaut)
     cv2::Mat rgb_image;
-    /*if (output_image.channels() == 3) {
-        MA_LOGI(TAG, "Image is a BGR image, converting to RGB");
-        // Vérifier si l'image est déjà au format RGB
-        cv2::Mat channels[3];
-        cv2::split(output_image, channels);
 
-        // Si le premier canal est B et le dernier canal est R, c'est du BGR
-        if (cv2::countNonZero(channels[0] - channels[2]) > 0) {
-            cv2::cvtColor(output_image, rgb_image, cv2::COLOR_BGR2RGB);
-        } else {
-            rgb_image = output_image.clone();
-        }
-    } else {*/
-    // MA_LOGI(TAG, "Image is already an RGB image, using original image");
     rgb_image = output_image.clone();
     //}
 
