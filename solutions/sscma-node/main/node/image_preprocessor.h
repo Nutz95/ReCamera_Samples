@@ -2,6 +2,7 @@
 
 #include "ai_model_processor.h"  // Ajout de l'en-tête pour AIModelProcessor
 #include "camera.h"
+#include "label_mapper.h"
 #include "led.h"  // Include led.h for static methods
 #include "node.h"
 #include "server.h"
@@ -72,11 +73,13 @@ protected:
     int channel_;
 
     // Nouveau membre pour le traitement AI
-    ma::AIModelProcessor* ai_processor_;
+    AIModelProcessor* ai_processor_;
     std::string ai_model_path_;
     std::string ai_model_labels_path_;
     bool enable_ai_detection_;
     float ai_detection_threshold_;  // Seuil de détection pour le modèle AI
+
+    LabelMapper* label_mapper_ = nullptr;  // Mapper pour les labels du modèle AI
 };
 
 }  // namespace ma::node

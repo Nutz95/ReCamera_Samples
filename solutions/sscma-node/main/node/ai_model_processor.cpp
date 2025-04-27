@@ -1,4 +1,5 @@
 #include "ai_model_processor.h"
+#include "label_mapper.h"
 #include "profiler.h"
 #include <iostream>
 #include <sscma.h>
@@ -6,7 +7,7 @@
 
 namespace cv2 = cv;
 
-namespace ma {
+namespace ma::node {
 
 // Définition de la palette de couleurs pour l'affichage
 const std::vector<cv2::Scalar> AIModelProcessor::ColorPalette::palette = {
@@ -24,7 +25,7 @@ cv2::Scalar AIModelProcessor::ColorPalette::getColor(int index) {
     return palette[index % palette.size()];
 }
 
-AIModelProcessor::AIModelProcessor() : engine_(nullptr), model_(nullptr), detector_(nullptr), modelLoaded_(false), detectionThreshold_(0.5f) {}
+AIModelProcessor::AIModelProcessor(LabelMapper* labelMapper) : engine_(nullptr), model_(nullptr), detector_(nullptr), modelLoaded_(false), detectionThreshold_(0.5f), label_mapper_(labelMapper) {}
 
 AIModelProcessor::~AIModelProcessor() {
     if (model_ != nullptr) {
@@ -212,7 +213,8 @@ ma_err_t AIModelProcessor::runDetection(cv2::Mat& image) {
     MA_LOGI(TAG, "Detection results: %zu objects found", count);
 
     for (const auto& result : results_) {
-        MA_LOGI(TAG, "  - Object: target=%d, score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, result.score, result.x, result.y, result.w, result.h);
+        std::string label = label_mapper_ ? label_mapper_->getLabel(result.target) : std::to_string(result.target);
+        MA_LOGI(TAG, "  - Object: target=%d (%s), score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, label.c_str(), result.score, result.x, result.y, result.w, result.h);
     }
 
     // Obtenir et afficher les performances

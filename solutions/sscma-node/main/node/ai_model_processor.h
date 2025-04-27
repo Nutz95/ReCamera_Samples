@@ -1,5 +1,6 @@
 #pragma once
 
+#include "label_mapper.h"
 #include <forward_list>  // Ajout de l'en-tête pour std::forward_list
 #include <opencv2/opencv.hpp>
 #include <sscma.h>
@@ -8,12 +9,12 @@
 
 namespace cv2 = cv;
 
-namespace ma {
+namespace ma::node {
 
 
 class AIModelProcessor {
 public:
-    AIModelProcessor();
+    AIModelProcessor(LabelMapper* labelMapper = nullptr);  // Ajout d'un paramètre pour le LabelMapper
     ~AIModelProcessor();
 
     // Méthodes d'initialisation
@@ -52,6 +53,8 @@ private:
     std::forward_list<ma_bbox_t> results_;  // Modification de vector à forward_list
     bool modelLoaded_;
     float detectionThreshold_;
+
+    LabelMapper* label_mapper_;  // Ajout d'un membre pour le LabelMapper
 };
 
 }  // namespace ma

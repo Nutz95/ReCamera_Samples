@@ -15,6 +15,7 @@ namespace cv2 = cv;
 #include "frame_utils.h"
 #include "image_preprocessor.h"
 #include "image_utils.h"
+#include "label_mapper.h"
 #include "led.h"
 #include "preprocessor_config.h"  // Nouveau fichier d'en-tête
 #include "profiler.h"
@@ -126,6 +127,11 @@ ImagePreProcessorNode::~ImagePreProcessorNode() {
     if (ai_processor_ != nullptr) {
         delete ai_processor_;
         ai_processor_ = nullptr;
+    }
+    // Nettoyer le label_mapper_
+    if (label_mapper_ != nullptr) {
+        delete label_mapper_;
+        label_mapper_ = nullptr;
     }
 }
 
@@ -308,11 +314,11 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
     ai_model_labels_path_   = aiCfg.model_labels_path;
     ai_detection_threshold_ = aiCfg.threshold;
 
-
     if (enable_ai_detection_ && !ai_model_path_.empty()) {
         // Initialiser le processeur IA
         if (ai_processor_ == nullptr) {
-            ai_processor_ = new ma::AIModelProcessor();
+            label_mapper_ = new LabelMapper(ai_model_labels_path_.c_str());
+            ai_processor_ = new AIModelProcessor(label_mapper_);
             MA_LOGI(TAG, "AI processor created sucessfuly");
         }
 
@@ -571,9 +577,10 @@ void ImagePreProcessorNode::performAIDetection(cv2::Mat& output_image) {
 
         // Afficher les résultats de détection
         auto results = ai_processor_->getDetectionResults();
-        MA_LOGI(TAG, "Détection IA: %zu objets détectés", results.size());
+        MA_LOGI(TAG, "IA Detections: %zu objets detected", results.size());
         for (const auto& result : results) {
-            MA_LOGI(TAG, "  - Objet: classe=%d, score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, result.score, result.x, result.y, result.w, result.h);
+            std::string label = label_mapper_ ? label_mapper_->getLabel(result.target) : std::to_string(result.target);
+            MA_LOGI(TAG, "  - Objet: classe=%d (%s), score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, label.c_str(), result.score, result.x, result.y, result.w, result.h);
         }
     } else {
         MA_LOGE(TAG, "Error when performing detection: code=%d", ret);
