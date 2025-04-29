@@ -24,7 +24,8 @@ public:
     ma_err_t onDestroy() override;
 
     // Nouvelle méthode pour demander une capture d'image
-    void requestCapture() {
+    void requestCapture(std::string tubeType) {
+        tube_type_ = tubeType;
         capture_requested_.store(true);
     }
 
@@ -33,13 +34,17 @@ public:
         return capture_requested_.load();
     }
 
+    std::string getCurrentTubeType() const {
+        return tube_type_;
+    }
+
 protected:
     void threadEntry();
     static void threadEntryStub(void* obj);
 
     // Méthodes privées pour découpage logique de threadEntry
     bool fetchAndValidateFrame(videoFrame*& frame);
-    void processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug);
+    void processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug, std::string tubeType);
     void handleNoCaptureRequested(videoFrame* frame);
 
     // Nouvelle méthode pour la détection IA
@@ -56,6 +61,7 @@ protected:
     bool debug_;                           // Mode debug pour afficher des informations supplémentaires
     int saved_image_count_;                // Compteur pour les images sauvegardées
     std::atomic<bool> capture_requested_;  // Nouveau flag pour indiquer si la capture est demandée par l'utilisateur
+    std::string tube_type_;
 
     // Nouvelles variables pour gérer l'état du flash
     std::atomic<bool> flash_active_;  // Indique si le flash est actif et doit être éteint

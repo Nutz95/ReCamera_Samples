@@ -32,8 +32,15 @@ static constexpr char TAG[] = "ma::node::image_preprocessor";
 
 
 // Fonction pour gérer la sauvegarde des images selon les règles demandées
-void saveProcessedImages(
-    const cv2::Mat& input_image, const cv2::Mat& output_image, int& saved_count, ma_tick_t processing_time, ma_tick_t& last_debug, std::string file_extension = ".jpg", bool save_raw = false) {
+void saveProcessedImages(const cv2::Mat& input_image,
+                         const cv2::Mat& output_image,
+                         int& saved_count,
+                         ma_tick_t processing_time,
+                         ma_tick_t& last_debug,
+                         std::string file_extension = ".jpg",
+                         std::string tube_type      = "OTHER",
+                         bool save_resized          = false,
+                         bool save_raw              = false) {
     double processing_time_ms = Tick::toMilliseconds(processing_time);
 
     // Obtenir le timestamp courant au format demandé (YYYY_MM_DD_HH_MM_SS_MS)
@@ -51,7 +58,7 @@ void saveProcessedImages(
     snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
 
     // Créer le dossier si nécessaire
-    std::string output_dir = "/userdata/IMAGES/";
+    std::string output_dir = "/userdata/IMAGES/" + tube_type + "/";
     struct stat st;
     if (stat(output_dir.c_str(), &st) != 0) {
         mkdir(output_dir.c_str(), 0777);
@@ -73,15 +80,21 @@ void saveProcessedImages(
             MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", raw_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
         }
 
-        ImageUtils::saveImageToBmp(output_image, output_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
-        MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
+        if (!output_image.empty() && save_resized) {
+            ImageUtils::saveImageToBmp(output_image, output_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
+            MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
+        }
 
     } else {
-        bool raw_saved = false;
+        bool raw_saved    = false;
+        bool output_saved = false;
         if (save_raw) {
             raw_saved = ImageUtils::saveImageToJpeg(input_image, raw_filename, JPEG_QUALITY, false);
         }
-        bool output_saved = ImageUtils::saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
+        if (!output_image.empty() && save_resized) {
+            output_saved = ImageUtils::saveImageToJpeg(output_image, output_filename, JPEG_QUALITY, false);
+        }
+
         MA_LOGI(TAG,
                 "Images sauvegardées - input: %s (%s), output: %s (%s) (processing time: %.2f ms)",
                 raw_filename.c_str(),
@@ -105,6 +118,7 @@ ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
       debug_(false),
       saved_image_count_(0),
       capture_requested_(false),
+      tube_type_("OTHER"),
       flash_active_(false),
       flash_intensity_(-1),
       enable_resize_(true),
@@ -152,7 +166,7 @@ void ImagePreProcessorNode::threadEntry() {
         bool should_process = capture_requested_.load();
 
         if (should_process) {
-            processCaptureRequest(frame, last_debug);
+            processCaptureRequest(frame, last_debug, tube_type_);
         } else {
             handleNoCaptureRequested(frame);
         }
@@ -177,9 +191,9 @@ bool ImagePreProcessorNode::fetchAndValidateFrame(videoFrame*& frame) {
 }
 
 // Nouvelle méthode privée : processCaptureRequest
-void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug) {
+void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug, std::string tubeType) {
     Profiler p("processCaptureRequest");
-    MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture, processing frame");
+    MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture into %s, processing frame", tubeType.c_str());
     capture_requested_.store(false);
     ma_tick_t start_time = Tick::current();
 
@@ -236,16 +250,21 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
 
     MA_LOGI(TAG, "Checking to perform AI detection: %s, model loaded: %s", enable_ai_detection_ ? "true" : "false", ai_processor_->isModelLoaded() ? "true" : "false");
     // Exécuter la détection IA si elle est activée
-    if (enable_ai_detection_ && ai_processor_ != nullptr && ai_processor_->isModelLoaded()) {
+    if (enable_ai_detection_ && ai_processor_ != nullptr && ai_processor_->isModelLoaded() && output_image.empty() == false) {
         performAIDetection(output_image);
     }
 
     ma_tick_t processing_time = Tick::current() - start_time;
 
-    if (enable_resize_) {
+    if (enable_resize_ || debug_) {
         // Passer le paramètre save_raw à la fonction saveProcessedImages
-        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug, save_raw ? ".bmp" : ".jpg", debug_);
-        FrameUtils::prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+        saveProcessedImages(raw_image, output_image, saved_image_count_, processing_time, last_debug, save_raw ? ".bmp" : ".jpg", tubeType.c_str(), enable_resize_, debug_);
+        if (!output_image.empty()) {
+            FrameUtils::prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
+        } else {
+            frame->release();
+            return;
+        }
     } else {
         MA_LOGI(TAG, "Redimensionnement désactivé - Pas d'image de sortie");
         std::string output_dir = "/userdata/IMAGES/";

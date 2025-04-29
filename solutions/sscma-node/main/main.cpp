@@ -1,10 +1,11 @@
 #include <fstream>
 #include <iostream>
+#include <limits>    // Pour std::numeric_limits
 #include <optional>  // Ajout pour std::optional
 #include <string>
 #include <syslog.h>
-#include <unistd.h>
-#include <vector>  // Ajout pour std::vector
+#include <unistd.h>  // Pour read(STDIN_FILENO, ...)
+#include <vector>    // Ajout pour std::vector
 
 #include <sscma.h>
 
@@ -14,9 +15,11 @@
 
 #include "signal.h"
 
+#include "node/ai_config.h"  // Ajout de l'include pour AIConfig
 #include "node/capture_flag.h"
 #include "node/flash_config.h"
 #include "node/image_preprocessor.h"
+#include "node/label_mapper.h"  // S'assurer que le header est inclus
 #include "node/led.h"
 #include "node/server.h"
 
@@ -150,6 +153,105 @@ AppArguments parseArguments(int argc, char** argv) {
 
 
     return args;
+}
+
+// Function to display labels and prompt the user to choose a key
+std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
+    const auto& labelMap = labelMapper.getLabelMap();
+    std::cout << "\nAvailable labels:" << std::endl;
+    for (const auto& [key, value] : labelMap) {
+        std::cout << "  " << key << ": " << value << std::endl;
+    }
+    std::cout << "  99: OTHER" << std::endl;
+    std::cout << "\nEnter the key of the desired label (or 'q' to quit): " << std::flush;
+
+    // Configuration du terminal comme dans votre version originale
+    struct termios old_tio, new_tio;
+    tcgetattr(STDIN_FILENO, &old_tio);
+    new_tio = old_tio;
+    new_tio.c_lflag &= (~ICANON & ~ECHO);  // Mode non-canonique et sans écho
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+
+    // Mettre stdin en mode non-bloquant comme dans votre code original
+    int old_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, old_flags | O_NONBLOCK);
+
+    std::string input;
+    bool enterPressed = false;
+    bool validInput   = false;
+    std::string selectedLabel;
+
+    while (!enterPressed || !validInput) {
+        char c;
+        int bytesRead = read(STDIN_FILENO, &c, 1);
+
+        if (bytesRead > 0) {
+            // Si c'est Enter, on traite la saisie
+            if (c == '\n' || c == '\r') {
+                std::cout << std::endl;  // Nouvelle ligne pour l'affichage
+
+                // Traiter l'entrée
+                if (input.empty()) {
+                    std::cout << "Vous avez appuyé sur Entrée sans valeur. Veuillez entrer un chiffre valide." << std::endl;
+                    input.clear();
+                    continue;
+                }
+
+                if (input == "q" || input == "Q") {
+                    std::cout << "Exiting application." << std::endl;
+                    // Restaurer les paramètres du terminal
+                    tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+                    fcntl(STDIN_FILENO, F_SETFL, old_flags);
+                    return "Q";
+                }
+
+                try {
+                    int choice = std::stoi(input);
+                    if (choice == 99) {
+                        validInput    = true;
+                        selectedLabel = "OTHER";
+                    } else if (labelMap.find(choice) != labelMap.end()) {
+                        validInput    = true;
+                        selectedLabel = labelMap.at(choice);
+                    } else {
+                        std::cout << "Key not found. Please choose a key from the list." << std::endl;
+                        input.clear();
+                    }
+                } catch (...) {
+                    std::cout << "Invalid input. Please enter an integer value or 'q' to quit." << std::endl;
+                    input.clear();
+                }
+
+                if (validInput) {
+                    enterPressed = true;
+                } else {
+                    std::cout << "Enter the key of the desired label (or 'q' to quit): " << std::flush;
+                }
+            }
+            // Si c'est Backspace ou Delete
+            else if (c == 127 || c == 8) {
+                if (!input.empty()) {
+                    input.pop_back();
+                    // Effacer le dernier caractère de l'écran
+                    std::cout << "\b \b" << std::flush;
+                }
+            }
+            // Caractère normal
+            else {
+                input.push_back(c);
+                std::cout << c << std::flush;  // Écho manuel
+            }
+        }
+
+        // Dormir un court instant pour éviter de surcharger le CPU, comme dans votre code original
+        Thread::sleep(Tick::fromMilliseconds(100));
+    }
+
+    // Restaurer les paramètres du terminal
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+    fcntl(STDIN_FILENO, F_SETFL, old_flags);  // Restaurer les flags d'origine
+
+    return selectedLabel;
 }
 
 // Fonction pour démarrer le service principal
@@ -319,39 +421,24 @@ int startService(const std::string& config_file, bool daemon) {
         return 1;
     }
 
-    // Configuration pour gérer l'entrée non bloquante
-    struct termios old_tio, new_tio;
-    tcgetattr(STDIN_FILENO, &old_tio);
-    new_tio = old_tio;
-    new_tio.c_lflag &= (~ICANON & ~ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
-
-    // Mettre stdin en mode non-bloquant
-    int old_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, old_flags | O_NONBLOCK);
-
     // Boucle principale avec invite utilisateur
-    bool running = true;
-    MA_LOGI(TAG, "=== Application de capture d'images ===");
-    MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
-    MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
+    bool running                         = true;
+    AIConfig aiCfg                       = ma::readAIConfigFromFile();
+    ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg.model_labels_path.c_str());
 
     while (running) {
-        char c;
-        int result = read(STDIN_FILENO, &c, 1);
+        std::string result = selectLabelInteractive(*label_mapper_);
 
-        if (result > 0) {
-            if (c == 'q' || c == 'Q') {
-                MA_LOGI(TAG, "Demande de fermeture de l'application...");
+        if (!result.empty()) {
+            if (result == "q" || result == "Q") {
+                MA_LOGI(TAG, "Closing Application requested...");
 
                 // S'assurer que toutes les LEDs sont éteintes avant de quitter
-                MA_LOGI(TAG, "Extinction de toutes les LEDs...");
+                MA_LOGI(TAG, "Switching LEDs off...");
                 // Éteindre d'abord la LED blanche (utilisée pour le flash)
                 Led::controlLed("white", false);
-                MA_LOGI(TAG, "Toutes les LEDs ont été éteintes.");
                 running = false;
-
-            } else if (c == '\n') {  // Déclencher la capture sur Entrée
+            } else {  // Déclencher la capture sur Entrée
                 // Lire les paramètres de configuration du flash à chaque capture
                 // pour permettre l'ajustement sans redémarrer l'application
                 FlashConfig currentFlashConfig = readFlashConfigFromFile(config_file.c_str());  // Renommé pour clarté
@@ -371,11 +458,10 @@ int startService(const std::string& config_file, bool daemon) {
                 // Demander une capture d'image
                 capture_requested.store(true);
                 if (imagePreProcessor) {
-                    imagePreProcessor->requestCapture();
+                    imagePreProcessor->requestCapture(result.c_str());
                 }
 
                 MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
-                MA_LOGI(TAG, "Pour modifier les paramètres du flash, éditez le fichier userdata/flow.json");
 
                 Thread::sleep(Tick::fromMilliseconds(500));  // Donner du temps pour le traitement
                 // Ajout des instructions après chaque capture pour rappeler à l'utilisateur
@@ -389,9 +475,7 @@ int startService(const std::string& config_file, bool daemon) {
         Thread::sleep(Tick::fromMilliseconds(100));
     }
 
-    // Restaurer les paramètres du terminal
-    tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
-    fcntl(STDIN_FILENO, F_SETFL, old_flags);  // Restaurer les anciens flags
+    delete label_mapper_;
 
     // Fermer proprement l'application
     shutdownApplication(&server);  // Le serveur gère la suppression de config

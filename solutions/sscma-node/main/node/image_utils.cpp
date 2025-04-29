@@ -16,6 +16,7 @@ namespace ma::node {
 
 bool ImageUtils::saveImageToJpeg(const cv2::Mat& image, const std::string& filepath, int quality, bool create_dir) {
     Profiler p("saveImageToJpeg");
+    umask(0002);
     std::vector<int> im_params = {cv2::IMWRITE_JPEG_QUALITY, quality};
     if (create_dir) {
         size_t last_slash = filepath.find_last_of('/');
@@ -64,6 +65,7 @@ cv2::Mat ImageUtils::whiteBalance(const cv2::Mat& image_rgb, float red_factor, f
 // Nouvelle fonction utilitaire pour sauvegarder une image au format BMP
 bool ImageUtils::saveImageToBmp(const cv2::Mat& image, const std::string& filepath, float red_factor, float green_factor, float blue_factor, bool create_dir) {
     Profiler p("saveImageToBmp");
+    umask(0002);
     if (create_dir) {
         size_t last_slash = filepath.find_last_of('/');
         if (last_slash != std::string::npos) {
