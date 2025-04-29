@@ -13,6 +13,11 @@ public:
     // Retourne le label associé à l'entier target, ou une chaîne vide si non trouvé
     std::string getLabel(int target) const;
 
+    // Ajout : retourne une référence constante sur le labelMap_
+    const std::map<int, std::string>& getLabelMap() const {
+        return labelMap_;
+    }
+
 private:
     void loadLabels(const std::string& jsonPath);
     std::map<int, std::string> labelMap_;
