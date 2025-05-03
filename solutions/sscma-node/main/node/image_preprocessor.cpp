@@ -6,8 +6,6 @@
 #include <sys/time.h>  // Include for gettimeofday
 #include <unistd.h>
 
-namespace cv2 = cv;
-
 #include "FlowConfigReader.h"
 #include "ai_config.h"
 #include "crop_config.h"
@@ -32,8 +30,8 @@ static constexpr char TAG[] = "ma::node::image_preprocessor";
 
 
 // Fonction pour gérer la sauvegarde des images selon les règles demandées
-void saveProcessedImages(const cv2::Mat& input_image,
-                         const cv2::Mat& output_image,
+void saveProcessedImages(const ::cv::Mat& input_image,
+                         const ::cv::Mat& output_image,
                          int& saved_count,
                          ma_tick_t processing_time,
                          ma_tick_t& last_debug,
@@ -198,7 +196,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     ma_tick_t start_time = Tick::current();
 
     Thread::enterCritical();
-    cv2::Mat raw_image = FrameUtils::convertFrameToMat(frame);
+    ::cv::Mat raw_image = FrameUtils::convertFrameToMat(frame);
     Thread::exitCritical();
 
     Led::controlLed("white", false);
@@ -239,7 +237,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         raw_image = ImageUtils::rotate90CCW(raw_image);
     }
 
-    cv2::Mat output_image;
+    ::cv::Mat output_image;
     if (enable_resize_) {
         MA_LOGI(TAG, "Resizing enabled - applying resizing to %dx%d", output_width_, output_height_);
         output_image = ImageUtils::resizeImage(raw_image, output_width_, output_height_);
@@ -572,12 +570,12 @@ ma_err_t ImagePreProcessorNode::onStop() {
 }
 
 // Méthode pour la détection IA
-void ImagePreProcessorNode::performAIDetection(cv2::Mat& output_image) {
+void ImagePreProcessorNode::performAIDetection(::cv::Mat& output_image) {
     Profiler p("ImagePreProcessorNode: performAIDetection");
     MA_LOGI(TAG, "AI detection enabled. Performing detection...");
 
     // Convertir l'image en RGB si elle est en BGR (OpenCV utilise BGR par défaut)
-    cv2::Mat rgb_image;
+    ::cv::Mat rgb_image;
 
     rgb_image = output_image.clone();
     //}

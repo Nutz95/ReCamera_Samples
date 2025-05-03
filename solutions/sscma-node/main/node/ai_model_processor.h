@@ -1,16 +1,12 @@
 #pragma once
-
 #include "label_mapper.h"
-#include <forward_list>  // Ajout de l'en-tête pour std::forward_list
+#include <forward_list>
 #include <opencv2/opencv.hpp>
 #include <sscma.h>
 #include <string>
 #include <vector>
 
-namespace cv2 = cv;
-
 namespace ma::node {
-
 
 class AIModelProcessor {
 public:
@@ -23,12 +19,12 @@ public:
     bool isModelLoaded() const;
 
     // Prétraitement et exécution
-    cv2::Mat preprocessImage(cv2::Mat& image, bool forceResize = false);
-    ma_err_t runDetection(cv2::Mat& image);
+    ::cv::Mat preprocessImage(::cv::Mat& image, bool forceResize = false);
+    ma_err_t runDetection(::cv::Mat& image);
 
     // Résultats et visualisation
     std::vector<ma_bbox_t> getDetectionResults() const;
-    void drawDetectionResults(cv2::Mat& image, bool convertBGR = false);
+    void drawDetectionResults(::cv::Mat& image, bool convertBGR = false);
     ma_perf_t getPerformanceStats() const;  // Utilisation du type ma_perf_t
 
     // Configuration
@@ -40,11 +36,11 @@ public:
 private:
     class ColorPalette {
     public:
-        static std::vector<cv2::Scalar> getPalette();
-        static cv2::Scalar getColor(int index);
+        static std::vector<::cv::Scalar> getPalette();
+        static ::cv::Scalar getColor(int index);
 
     private:
-        static const std::vector<cv2::Scalar> palette;
+        static const std::vector<::cv::Scalar> palette;
     };
 
     ma::engine::EngineCVI* engine_;
@@ -57,4 +53,4 @@ private:
     LabelMapper* label_mapper_;  // Ajout d'un membre pour le LabelMapper
 };
 
-}  // namespace ma
+}  // namespace ma::node

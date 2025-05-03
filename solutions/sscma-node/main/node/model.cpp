@@ -1,14 +1,14 @@
 #include <unistd.h>
 
 #include <opencv2/opencv.hpp>
-namespace cv2 = cv;
 
 #include "model.h"
 
-namespace ma::node {
-
 using namespace ma::engine;
 using namespace ma::model;
+
+namespace ma::node {
+
 
 static constexpr char TAG[] = "ma::node::model";
 
@@ -195,7 +195,7 @@ void ModelNode::threadEntry() {
                     reply["data"]["labels"].push_back(std::string("N/A-" + std::to_string(result.box.target)));
                 }
 
-                cv2::Mat maskImage(result.mask.height, result.mask.width, CV_8UC1, cv2::Scalar(0));
+                ::cv::Mat maskImage(result.mask.height, result.mask.width, CV_8UC1, ::cv::Scalar(0));
 
                 for (int i = 0; i < result.mask.height; ++i) {
                     for (int j = 0; j < result.mask.width; ++j) {
@@ -205,11 +205,11 @@ void ModelNode::threadEntry() {
                     }
                 }
 
-                std::vector<std::vector<cv2::Point>> contours;
-                std::vector<cv2::Vec4i> hierarchy;
-                cv2::findContours(maskImage, contours, hierarchy, cv2::RETR_EXTERNAL, cv2::CHAIN_APPROX_SIMPLE);
+                std::vector<std::vector<::cv::Point>> contours;
+                std::vector<::cv::Vec4i> hierarchy;
+                ::cv::findContours(maskImage, contours, hierarchy, ::cv::RETR_EXTERNAL, ::cv::CHAIN_APPROX_SIMPLE);
 
-                auto maxContour = std::max_element(contours.begin(), contours.end(), [](std::vector<cv2::Point>& a, std::vector<cv2::Point>& b) { return a.size() < b.size(); });
+                auto maxContour = std::max_element(contours.begin(), contours.end(), [](std::vector<::cv::Point>& a, std::vector<::cv::Point>& b) { return a.size() < b.size(); });
 
                 std::vector<uint16_t> contour;
                 if (maxContour != contours.end()) {

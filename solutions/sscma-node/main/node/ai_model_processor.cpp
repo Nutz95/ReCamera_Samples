@@ -5,23 +5,21 @@
 #include <sscma.h>
 #define TAG "AIModelProcessor"
 
-namespace cv2 = cv;
-
 namespace ma::node {
 
 // Définition de la palette de couleurs pour l'affichage
-const std::vector<cv2::Scalar> AIModelProcessor::ColorPalette::palette = {
-    cv2::Scalar(0, 255, 0),     cv2::Scalar(0, 170, 255), cv2::Scalar(0, 128, 255), cv2::Scalar(0, 64, 255),  cv2::Scalar(0, 0, 255),     cv2::Scalar(170, 0, 255),   cv2::Scalar(128, 0, 255),
-    cv2::Scalar(64, 0, 255),    cv2::Scalar(0, 0, 255),   cv2::Scalar(255, 0, 170), cv2::Scalar(255, 0, 128), cv2::Scalar(255, 0, 64),    cv2::Scalar(255, 128, 0),   cv2::Scalar(255, 255, 0),
-    cv2::Scalar(128, 255, 0),   cv2::Scalar(0, 255, 128), cv2::Scalar(0, 255, 255), cv2::Scalar(0, 128, 128), cv2::Scalar(128, 0, 255),   cv2::Scalar(255, 0, 255),   cv2::Scalar(128, 128, 255),
-    cv2::Scalar(255, 128, 128), cv2::Scalar(255, 64, 64), cv2::Scalar(64, 255, 64), cv2::Scalar(64, 64, 255), cv2::Scalar(128, 255, 255), cv2::Scalar(255, 255, 128),
+const std::vector<::cv::Scalar> AIModelProcessor::ColorPalette::palette = {
+    ::cv::Scalar(0, 255, 0),     ::cv::Scalar(0, 170, 255), ::cv::Scalar(0, 128, 255), ::cv::Scalar(0, 64, 255),  ::cv::Scalar(0, 0, 255),     ::cv::Scalar(170, 0, 255),   ::cv::Scalar(128, 0, 255),
+    ::cv::Scalar(64, 0, 255),    ::cv::Scalar(0, 0, 255),   ::cv::Scalar(255, 0, 170), ::cv::Scalar(255, 0, 128), ::cv::Scalar(255, 0, 64),    ::cv::Scalar(255, 128, 0),   ::cv::Scalar(255, 255, 0),
+    ::cv::Scalar(128, 255, 0),   ::cv::Scalar(0, 255, 128), ::cv::Scalar(0, 255, 255), ::cv::Scalar(0, 128, 128), ::cv::Scalar(128, 0, 255),   ::cv::Scalar(255, 0, 255),   ::cv::Scalar(128, 128, 255),
+    ::cv::Scalar(255, 128, 128), ::cv::Scalar(255, 64, 64), ::cv::Scalar(64, 255, 64), ::cv::Scalar(64, 64, 255), ::cv::Scalar(128, 255, 255), ::cv::Scalar(255, 255, 128),
 };
 
-std::vector<cv2::Scalar> AIModelProcessor::ColorPalette::getPalette() {
+std::vector<::cv::Scalar> AIModelProcessor::ColorPalette::getPalette() {
     return palette;
 }
 
-cv2::Scalar AIModelProcessor::ColorPalette::getColor(int index) {
+::cv::Scalar AIModelProcessor::ColorPalette::getColor(int index) {
     return palette[index % palette.size()];
 }
 
@@ -96,7 +94,7 @@ bool AIModelProcessor::isModelLoaded() const {
     return modelLoaded_;
 }
 
-cv2::Mat AIModelProcessor::preprocessImage(cv2::Mat& image, bool forceResize) {
+::cv::Mat AIModelProcessor::preprocessImage(::cv::Mat& image, bool forceResize) {
     Profiler p("AI: preprocessImage");
     int ih = image.rows;
     int iw = image.cols;
@@ -118,14 +116,14 @@ cv2::Mat AIModelProcessor::preprocessImage(cv2::Mat& image, bool forceResize) {
     // Si l'image est déjà dans la bonne taille et n'a pas besoin d'être redimensionnée
     if (!forceResize && ih == oh && iw == ow) {
         // Vérifier si l'image est déjà au format RGB
-        cv2::Mat processedImage;
+        ::cv::Mat processedImage;
         if (image.channels() == 3) {
-            cv2::Mat channels[3];
-            cv2::split(image, channels);
+            ::cv::Mat channels[3];
+            ::cv::split(image, channels);
 
             // Si le premier canal est B et le dernier canal est R, c'est du BGR (format OpenCV par défaut)
-            if (cv2::countNonZero(channels[0] - channels[2]) > 0) {
-                cv2::cvtColor(image, processedImage, cv2::COLOR_BGR2RGB);
+            if (::cv::countNonZero(channels[0] - channels[2]) > 0) {
+                ::cv::cvtColor(image, processedImage, ::cv::COLOR_BGR2RGB);
                 MA_LOGI(TAG, "Image converted from BGR to RGB format");
             } else {
                 // Déjà en RGB
@@ -140,11 +138,11 @@ cv2::Mat AIModelProcessor::preprocessImage(cv2::Mat& image, bool forceResize) {
     }
 
     // Sinon, redimensionner l'image
-    cv2::Mat resizedImage;
+    ::cv::Mat resizedImage;
     double resize_scale = std::min((double)oh / ih, (double)ow / iw);
     int nh              = (int)(ih * resize_scale);
     int nw              = (int)(iw * resize_scale);
-    cv2::resize(image, resizedImage, cv2::Size(nw, nh));
+    ::cv::resize(image, resizedImage, ::cv::Size(nw, nh));
 
     // Ajouter des bordures pour atteindre la taille requise
     int top    = (oh - nh) / 2;
@@ -152,17 +150,17 @@ cv2::Mat AIModelProcessor::preprocessImage(cv2::Mat& image, bool forceResize) {
     int left   = (ow - nw) / 2;
     int right  = (ow - nw) - left;
 
-    cv2::Mat paddedImage;
-    cv2::copyMakeBorder(resizedImage, paddedImage, top, bottom, left, right, cv2::BORDER_CONSTANT, cv2::Scalar::all(0));
+    ::cv::Mat paddedImage;
+    ::cv::copyMakeBorder(resizedImage, paddedImage, top, bottom, left, right, ::cv::BORDER_CONSTANT, ::cv::Scalar::all(0));
 
     // Convertir si nécessaire de BGR à RGB
     if (image.channels() == 3) {
-        cv2::Mat channels[3];
-        cv2::split(paddedImage, channels);
+        ::cv::Mat channels[3];
+        ::cv::split(paddedImage, channels);
 
         // Si le premier canal est B et le dernier canal est R, c'est du BGR
-        if (cv2::countNonZero(channels[0] - channels[2]) > 0) {
-            cv2::cvtColor(paddedImage, paddedImage, cv2::COLOR_BGR2RGB);
+        if (::cv::countNonZero(channels[0] - channels[2]) > 0) {
+            ::cv::cvtColor(paddedImage, paddedImage, ::cv::COLOR_BGR2RGB);
             MA_LOGI(TAG, "Image resized and converted from BGR to RGB format");
         } else {
             MA_LOGI(TAG, "Image resized and already in RGB format");
@@ -174,7 +172,7 @@ cv2::Mat AIModelProcessor::preprocessImage(cv2::Mat& image, bool forceResize) {
 }
 
 
-ma_err_t AIModelProcessor::runDetection(cv2::Mat& image) {
+ma_err_t AIModelProcessor::runDetection(::cv::Mat& image) {
 
     if (!modelLoaded_ || detector_ == nullptr) {
         MA_LOGE(TAG, "Model not loaded or not a detector model");
@@ -182,7 +180,7 @@ ma_err_t AIModelProcessor::runDetection(cv2::Mat& image) {
     }
 
     // Prétraiter l'image
-    /*cv2::Mat processedImage = preprocessImage(image);
+    /*::cv::Mat processedImage = preprocessImage(image);
 
     Profiler p("AI: runDetection");
     // Préparer l'image pour le modèle
@@ -233,7 +231,7 @@ std::vector<ma_bbox_t> AIModelProcessor::getDetectionResults() const {
     return resultVector;
 }
 
-void AIModelProcessor::drawDetectionResults(cv2::Mat& image, bool convertBGR) {
+void AIModelProcessor::drawDetectionResults(::cv::Mat& image, bool convertBGR) {
     for (const auto& result : results_) {
         Profiler p("AI: drawDetectionResults");
         // Calculer les coordonnées du rectangle (x1,y1,x2,y2)
@@ -248,15 +246,15 @@ void AIModelProcessor::drawDetectionResults(cv2::Mat& image, bool convertBGR) {
         sprintf(content, "%d(%.3f)", result.target, result.score);
 
         // Dessiner le rectangle sur l'image
-        cv2::rectangle(image, cv2::Point(x1, y1), cv2::Point(x2, y2), ColorPalette::getColor(result.target), 3, 8, 0);
+        ::cv::rectangle(image, ::cv::Point(x1, y1), ::cv::Point(x2, y2), ColorPalette::getColor(result.target), 3, 8, 0);
 
         // Ajouter le texte au-dessus du rectangle
-        cv2::putText(image, content, cv2::Point(x1, y1 - 10), cv2::FONT_HERSHEY_SIMPLEX, 0.6, ColorPalette::getColor(result.target), 2, cv2::LINE_AA);
+        ::cv::putText(image, content, ::cv::Point(x1, y1 - 10), ::cv::FONT_HERSHEY_SIMPLEX, 0.6, ColorPalette::getColor(result.target), 2, ::cv::LINE_AA);
     }
 
     // Convertir l'image de RGB à BGR si demandé
     if (convertBGR && image.channels() == 3) {
-        cv2::cvtColor(image, image, cv2::COLOR_RGB2BGR);
+        ::cv::cvtColor(image, image, ::cv::COLOR_RGB2BGR);
     }
 }
 

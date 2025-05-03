@@ -8,6 +8,7 @@
 #include "server.h"
 #include <atomic>
 #include <mutex>
+#include <opencv2/opencv.hpp>
 
 namespace ma::node {
 
@@ -48,7 +49,7 @@ protected:
     void handleNoCaptureRequested(videoFrame* frame);
 
     // Nouvelle méthode pour la détection IA
-    void performAIDetection(cv2::Mat& output_image);
+    void performAIDetection(::cv::Mat& output_image);
 
 protected:
     int32_t output_width_;   // Largeur cible (640 par défaut)

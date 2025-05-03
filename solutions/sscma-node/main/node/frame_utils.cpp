@@ -7,40 +7,38 @@
 
 static constexpr char TAG[] = "ma::node::FrameUtils";
 
-namespace cv2 = cv;
-
 namespace ma::node {
 
 
 // Fonction pour convertir la frame d'entrée en Mat OpenCV
-cv2::Mat FrameUtils::convertFrameToMat(videoFrame* frame) {
-    cv2::Mat raw_image;
+::cv::Mat FrameUtils::convertFrameToMat(videoFrame* frame) {
+    ::cv::Mat raw_image;
     Profiler p("convertFrameToMat");
     // Ajouter un log pour voir quel format d'image est reçu
     MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d, channel=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical, frame->chn);
 
     if (frame->img.format == MA_PIXEL_FORMAT_RGB888) {
-        raw_image = cv2::Mat(frame->img.height, frame->img.width, CV_8UC3, frame->img.data);
+        raw_image = ::cv::Mat(frame->img.height, frame->img.width, CV_8UC3, frame->img.data);
     } else if (frame->img.format == MA_PIXEL_FORMAT_YUV422) {
         // Conversion YUV422 vers BGR (directement pour OpenCV)
-        cv2::Mat yuv(frame->img.height, frame->img.width, CV_8UC2, frame->img.data);
-        cv2::cvtColor(yuv, raw_image, cv2::COLOR_YUV2BGR_YUYV);  // Changement ici: YUV2BGR_YUYV
+        ::cv::Mat yuv(frame->img.height, frame->img.width, CV_8UC2, frame->img.data);
+        ::cv::cvtColor(yuv, raw_image, ::cv::COLOR_YUV2BGR_YUYV);  // Changement ici: YUV2BGR_YUYV
         MA_LOGI(TAG, "Converted YUV422 to BGR");
     } else if (frame->img.format == MA_PIXEL_FORMAT_JPEG) {
         // Décodage JPEG
         std::vector<uchar> buffer(frame->img.data, frame->img.data + frame->img.size);
-        raw_image = cv2::imdecode(buffer, cv2::IMREAD_COLOR);
+        raw_image = ::cv::imdecode(buffer, ::cv::IMREAD_COLOR);
         MA_LOGI(TAG, "JPEG format Decoded size=%dx%d => %d", frame->img.width, frame->img.height, frame->img.size);
     } else if (frame->img.format == MA_PIXEL_FORMAT_H264) {
         // Le format H264 nécessite d'être décodé
         MA_LOGW(TAG, "H264 format detected - this format requires a decoder");
         // Pour H264, vous auriez besoin d'implémenter un décodeur H264
         // Ce n'est pas trivial et nécessiterait l'utilisation de FFmpeg ou d'une autre bibliothèque
-        return cv2::Mat();
+        return ::cv::Mat();
     } else {
         // Format non supporté - retourne une image vide
         MA_LOGW(TAG, "Format d'image non supporté: %d", frame->img.format);
-        return cv2::Mat();
+        return ::cv::Mat();
     }
 
     if (raw_image.empty()) {
@@ -52,7 +50,7 @@ cv2::Mat FrameUtils::convertFrameToMat(videoFrame* frame) {
     return raw_image;
 }
 
-bool FrameUtils::prepareAndPublishOutputFrame(const cv2::Mat& output_image, videoFrame* input_frame, MessageBox& output_frame, int output_width, int output_height) {
+bool FrameUtils::prepareAndPublishOutputFrame(const ::cv::Mat& output_image, videoFrame* input_frame, MessageBox& output_frame, int output_width, int output_height) {
     // Créer une nouvelle frame pour l'image traitée
     videoFrame* output_frame_ptr = new videoFrame();
     output_frame_ptr->chn        = input_frame->chn;

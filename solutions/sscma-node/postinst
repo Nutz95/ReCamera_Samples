@@ -1,0 +1,40 @@
+#!/bin/sh
+echo 'Configuring environment for sscma-node'
+
+# Créer le répertoire lib s'il n'existe pas
+mkdir -p /usr/local/lib
+
+# Créer les liens symboliques pour les versions spécifiques des bibliothèques OpenCV et FFmpeg
+cd /usr/lib
+for lib in libopencv_core.so libopencv_imgproc.so libopencv_imgcodecs.so; do
+    if [ -f "$lib" ] && [ ! -f "${lib}.3.2" ]; then
+        ln -sf "/usr/lib/$lib" "/usr/lib/${lib}.3.2"
+    fi
+done
+
+for lib in libavformat.so libavcodec.so; do
+    if [ -f "$lib" ] && [ ! -f "${lib}.58" ]; then
+        ln -sf "/usr/lib/$lib" "/usr/lib/${lib}.58"
+    fi
+done
+
+if [ -f "libavutil.so" ] && [ ! -f "libavutil.so.56" ]; then
+    ln -sf "/usr/lib/libavutil.so" "/usr/lib/libavutil.so.56"
+fi
+
+# Mise à jour du cache de bibliothèques
+ldconfig
+
+# Créer un script wrapper pour l'application
+cat > /usr/local/bin/sscma-node_run << 'EOL'
+#!/bin/sh
+# Wrapper script for sscma-node
+export LD_LIBRARY_PATH=/usr/lib:/usr/local/lib:$LD_LIBRARY_PATH
+/usr/local/bin/sscma-node "$@"
+EOL
+
+# Rendre le script exécutable
+chmod 755 /usr/local/bin/sscma-node_run
+
+echo 'Installation completed successfully!'
+exit 0

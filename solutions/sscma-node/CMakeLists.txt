@@ -1,10 +1,23 @@
-cmake_minimum_required(VERSION 3.5.0)
+# Force l'utilisation de la version custom d'OpenCV 4.11
+include_directories(BEFORE /home/nra/opencv-riscv64/include/opencv4)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+set(OpenCV_DIR "/home/nra/opencv-riscv64/lib/cmake/opencv4")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(
-    sscma-node
-    VERSION 0.2.0
-    LANGUAGES C CXX
-)
+cmake_minimum_required(VERSION 3.10)
+
+project(sscma-node VERSION 1.0.0 LANGUAGES C CXX)
+
+set(RISCV_SDK_ROOT $ENV{RISCV_SDK_ROOT})
+set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/toolchain-riscv64-linux.cmake CACHE FILEPATH "toolchain file")
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "$ENV{RISCV_SDK_ROOT}/cmake")
 
 get_filename_component(PROJECT_DIR ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
 
@@ -15,6 +28,42 @@ get_filename_component(ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../" ABSOLUTE)
 include(${ROOT_DIR}/cmake/toolchain-riscv64-linux-musl-x86_64.cmake)
 
 message(STATUS "ROOT_DIR: ${ROOT_DIR}")
+
+message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
+message(STATUS "CMAKE_INCLUDE_PATH: ${CMAKE_INCLUDE_PATH}")
+message(STATUS "CMAKE_SYSTEM_INCLUDE_PATH: ${CMAKE_SYSTEM_INCLUDE_PATH}")
+
+# Force l'utilisation de la version custom d'OpenCV 4.11
+set(OpenCV_DIR "/home/nra/opencv-riscv64/lib/cmake/opencv4" CACHE PATH "Path to OpenCV 4.11.0 config" FORCE)
+set(OpenCV_STATIC ON)
+set(OpenCV_INCLUDE_DIRS "/home/nra/opencv-riscv64/include/opencv4/3rdparty")
+set(OpenCV_LIB_DIR "/home/nra/opencv-riscv64/lib")
+include_directories(BEFORE /home/nra/opencv-riscv64/include/opencv4)
+link_directories(
+    /home/nra/opencv-riscv64/lib
+    /home/nra/reCamera/output/sg2002_recamera_emmc/install/soc_sg2002_recamera_emmc/tpu_musl_riscv64/cvitek_tpu_sdk/lib
+    /home/nra/reCamera/output/sg2002_recamera_emmc/cvi_mpi/modules/audio/cv181x/musl_riscv64
+    /home/nra/reCameraOS_SDK/sg2002_recamera_emmc/buildroot-2021.05/output/cvitek_CV181X_musl_riscv64/host/riscv64-buildroot-linux-musl/sysroot/usr/lib
+    /home/nra/reCamera/output/sg2002_recamera_emmc/install/soc_sg2002_recamera_emmc/tpu_musl_riscv64/cvitek_ai_sdk/lib
+    /home/nra/reCamera/output/sg2002_recamera_emmc/install/soc_sg2002_recamera_emmc/tpu_musl_riscv64/cvitek_tpu_sdk/lib
+    /home/nra/reCamera/output/sg2002_recamera_emmc/install/soc_sg2002_recamera_emmc/tpu_musl_riscv64/cvitek_ai_sdk/sample/3rd/rtsp/lib
+)
+
+# Pour un linkage mixte : OpenCV statique, autres libs dynamiques
+set(OpenCV_STATIC ON)
+# Ne pas forcer le linkage statique global
+# set(CMAKE_EXE_LINKER_FLAGS "-static")
+
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio objdetect)
+
+message(STATUS "OpenCV_INCLUDE_DIRS: ${OpenCV_INCLUDE_DIRS}")
+message(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")
+message(STATUS "OpenCV_VERSION: ${OpenCV_VERSION}")
+message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+message(STATUS "CMAKE_FIND_ROOT_PATH: ${CMAKE_FIND_ROOT_PATH}")
+
+# Link OpenCV statically
+set(OpenCV_STATIC_LIBS ${OpenCV_LIBS})
 
 # Configurer les options d'installation et packaging
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "device")
@@ -81,6 +130,21 @@ install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/sscma-node_run DESTINATION /usr/loc
 
 include(${ROOT_DIR}/cmake/project.cmake)
 
+if(TARGET sscma-node)
+    target_link_libraries(sscma-node PRIVATE -lopencv_objdetect -lopencv_core)
+endif()
+
+# Informations de packaging pour CPack
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Admin")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "SSCMA Node for ReCameraOS")
+set(CPACK_PACKAGE_VENDOR "Sophgo")
+set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+
+include(CPack)
 
 
 

@@ -1,3 +1,8 @@
+#include <opencv2/core/version.hpp>
+#include <opencv2/opencv.hpp>
+#pragma message("OpenCV version: " CV_VERSION)
+#pragma message("OpenCV include path: " CVAUX_STR(OPENCV_INCLUDE_DIRS))
+
 #include <fstream>
 #include <iostream>
 #include <limits>    // Pour std::numeric_limits
@@ -6,6 +11,7 @@
 #include <syslog.h>
 #include <unistd.h>  // Pour read(STDIN_FILENO, ...)
 #include <vector>    // Ajout pour std::vector
+
 
 #include <sscma.h>
 
@@ -19,6 +25,7 @@
 #include "node/capture_flag.h"
 #include "node/flash_config.h"
 #include "node/image_preprocessor.h"
+#include "node/image_utils.h"
 #include "node/label_mapper.h"  // S'assurer que le header est inclus
 #include "node/led.h"
 #include "node/server.h"
@@ -258,6 +265,8 @@ std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
 int startService(const std::string& config_file, bool daemon) {
     // Réinitialiser les ressources système au démarrage pour éviter les conflits
     resetSystemResources();
+
+    ImageUtils::printOpenCVVersion();
 
     // Lire les paramètres de configuration du flash depuis flow.json
     FlashConfig flashConfig = readFlashConfigFromFile(config_file.c_str());
