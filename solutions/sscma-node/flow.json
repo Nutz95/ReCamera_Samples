@@ -29,8 +29,8 @@
             "config": {
                 "width": 640,
                 "height": 640,
-                "debug": false,
-                "enable_resize": true,
+                "debug": true,
+                "enable_resize": false,
                 "enable_denoising": false,
                 "enable_ccw_rotation": false,
                 "save_raw": true,
@@ -55,6 +55,13 @@
         "xmax": 1470,
         "ymax": 674
     },
+    "barcode_config": {
+        "enabled": true,
+        "roi_xmin": 1000,
+        "roi_ymin": 440,
+        "roi_xmax": 1360,
+        "roi_ymax": 621
+    },
     "white_balance_config": {
         "red_balance_factor": 0.8,
         "green_balance_factor": 0.8,
@@ -62,8 +69,8 @@
     },
     "ai_config": {
         "enabled": true,
-        "model_path": "/userdata/MODEL/model.cvimodel",
-        "model_lables_path": "/userdata/MODEL/model.json",
+        "model_path": "/userdata/MODEL/stago.cvimodel",
+        "model_labels_path": "/userdata/MODEL/labels.json",
         "threshold": 0.5
     }
 }
