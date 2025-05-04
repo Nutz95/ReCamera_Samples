@@ -56,10 +56,17 @@
         "ymax": 674
     },
     "barcode_config": {
-        "enabled": true,
+        "enabled": false,
         "roi_xmin": 1000,
         "roi_ymin": 440,
         "roi_xmax": 1360,
+        "roi_ymax": 621
+    },
+    "datamatrix_config": {
+        "enabled": false,
+        "roi_xmin": 1204,
+        "roi_ymin": 440,
+        "roi_xmax": 1288,
         "roi_ymax": 621
     },
     "white_balance_config": {

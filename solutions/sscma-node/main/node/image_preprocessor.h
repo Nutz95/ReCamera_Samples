@@ -42,6 +42,9 @@ public:
     // Décode un code-barres à partir d'une image de pleine résolution selon la config barcode_config
     std::vector<std::string> decodeBarcodeFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type);
 
+    // Décode un datamatrix à partir d'une image de pleine résolution selon la config datamatrix_config
+    std::string decodeDatamatrixFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type, bool enable_denoising);
+
 protected:
     void threadEntry();
     static void threadEntryStub(void* obj);

@@ -7,6 +7,7 @@
 #include <opencv2/objdetect.hpp>
 #include <opencv2/objdetect/barcode.hpp>
 #include <opencv2/opencv.hpp>
+#include <opencv2/photo.hpp>
 #include <string>
 #include <sys/stat.h>
 #include <sys/time.h>  // Include for gettimeofday
@@ -126,11 +127,10 @@ bool ImageUtils::saveImageToBmp(const ::cv::Mat& image, const std::string& filep
     Profiler p("denoiseImage");
     ::cv::Mat denoised_image;
     try {
-        MA_LOGI(TAG, "Application du filtre de débruitage gaussien...");
-        // Utilisation de GaussianBlur qui est disponible dans le module core d'OpenCV
-        // Paramètres: image source, image destination, taille du noyau, écart-type X, écart-type Y
-        ::cv::GaussianBlur(input_image, denoised_image, ::cv::Size(5, 5), 0);
-        MA_LOGI(TAG, "Filtre de débruitage gaussien appliqué avec succès");
+        MA_LOGI(TAG, "Application du filtre fastNlMeansDenoisingColored...");
+        // Utilisation de fastNlMeansDenoisingColored pour un débruitage efficace
+        ::cv::fastNlMeansDenoisingColored(input_image, denoised_image, 10, 10, 7, 21);
+        MA_LOGI(TAG, "Filtre fastNlMeansDenoisingColored appliqué avec succès");
         return denoised_image;
     } catch (const std::exception& e) {
         MA_LOGW(TAG, "Erreur lors de l'application du filtre de débruitage: %s", e.what());
@@ -163,17 +163,29 @@ bool ImageUtils::saveImageToBmp(const ::cv::Mat& image, const std::string& filep
     return rotated_image;
 }
 
-// Détection et décodage de QR code
+// Détection et décodage de QR code datamatrix
 std::string ImageUtils::decodeQRCode(const ::cv::Mat& image) {
     Profiler p("decodeQRCode");
-    ::cv::QRCodeDetector detector;
-    std::string data = detector.detectAndDecode(image);
-    if (data.empty()) {
-        MA_LOGW(TAG, "QR Code non détecté ou non décodable");
-    } else {
-        MA_LOGI(TAG, "QR Code détecté: %s", data.c_str());
+
+    std::vector<std::string> decoded_info, decoded_type;
+    std::vector<::cv::Point> corners;
+
+    ::cv::Ptr<::cv::barcode::BarcodeDetector> bardet = ::cv::makePtr<cv::barcode::BarcodeDetector>();
+    bardet->detectAndDecodeWithType(image, decoded_info, decoded_type, corners);
+
+    for (size_t i = 0; i < decoded_info.size(); ++i) {
+        if (!decoded_info[i].empty()) {
+            MA_LOGI(TAG, "Code Detected: %s (type: %s)", decoded_info[i].c_str(), decoded_type[i].c_str());
+
+            // Si on veut uniquement le premier DataMatrix
+            if (decoded_type[i] == "DATAMATRIX") {
+                return decoded_info[i];
+            }
+        }
     }
-    return data;
+
+    // Aucun DataMatrix trouvé
+    return std::string();
 }
 
 // Détection et décodage de codes-barres (tous types)

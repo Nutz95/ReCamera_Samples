@@ -10,6 +10,7 @@
 #include "ai_config.h"
 #include "barcode_config.h"
 #include "crop_config.h"
+#include "datamatrix_config.h"
 #include "flash_config.h"
 #include "frame_utils.h"
 #include "image_preprocessor.h"
@@ -211,6 +212,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     // Charger la configuration du préprocesseur depuis le fichier flow.json
     ma::PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(id_);
     ma::BarcodeConfig barcodeConfig        = ma::readBarcodeConfigFromFile();
+    ma::DatamatrixConfig datamatrixConfig  = ma::readDatamatrixConfigFromFile();
 
     // Utiliser les paramètres de configuration lus du fichier
     bool save_raw     = preprocessorCfg.save_raw;
@@ -219,13 +221,6 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     debug_            = preprocessorCfg.debug;
 
     MA_LOGI(TAG, "Configuration chargée: save_raw=%s, enable_resize=%s, enable_denoising=%s", save_raw ? "true" : "false", enable_resize_ ? "true" : "false", enable_denoising_ ? "true" : "false");
-
-    if (enable_denoising_) {
-        MA_LOGI(TAG, "Denoising enabled - Application du filtre de débruitage");
-        raw_image = ImageUtils::denoiseImage(raw_image);
-    } else {
-        MA_LOGI(TAG, "Denoising disabled - Utilisation de l'image brute");
-    }
 
     // Lecture dynamique des paramètres de crop
     ma::CropConfig cropCfg = ma::readCropConfigFromFile();
@@ -246,6 +241,16 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
             MA_LOGI(TAG, "BarCode detected: %s", codes[0].c_str());
         } else {
             MA_LOGI(TAG, "No BarCode detected");
+        }
+    }
+
+    if (datamatrixConfig.enabled) {
+        // Redimensionner la ROI par 2 avant décodage
+        std::string datamatrix = decodeDatamatrixFromFullResImage(raw_image, debug_, tubeType, enable_denoising_);
+        if (!datamatrix.empty()) {
+            MA_LOGI(TAG, "Datamatrix detected: %s", datamatrix.c_str());
+        } else {
+            MA_LOGI(TAG, "No Datamatrix detected");
         }
     }
 
@@ -657,6 +662,49 @@ std::vector<std::string> ImagePreProcessorNode::decodeBarcodeFromFullResImage(co
 
     results = ImageUtils::decodeBarcodes(roi_img);
     return results;
+}
+
+// Nouvelle méthode pour décoder un datamatrix à partir d'une image de pleine résolution
+std::string ImagePreProcessorNode::decodeDatamatrixFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type, bool enable_denoising) {
+    Profiler p("ImagePreProcessorNode: decodeDatamatrixFromFullResImage");
+    ma::DatamatrixConfig datamatrixCfg = ma::readDatamatrixConfigFromFile();
+    if (!datamatrixCfg.enabled) {
+        MA_LOGI(TAG, "Datamatrix decoding disabled from configuration");
+        return std::string();
+    }
+    ::cv::Mat roi_img = ImageUtils::cropImage(fullres_image, datamatrixCfg.roi_xmin, datamatrixCfg.roi_ymin, datamatrixCfg.roi_xmax, datamatrixCfg.roi_ymax);
+    if (roi_img.empty()) {
+        MA_LOGW(TAG, "Image ROI empty for datamatrix decoding");
+        return std::string();
+    }
+    if (save_roi_bmp) {
+        time_t now = time(nullptr);
+        struct tm tm_info;
+        localtime_r(&now, &tm_info);
+        char timestamp[64];
+        strftime(timestamp, sizeof(timestamp), "%Y_%m_%d_%H_%M_%S", &tm_info);
+        struct timeval tv;
+        ::gettimeofday(&tv, NULL);
+        char timestamp_ms[80];
+        snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
+        std::string output_dir = "/userdata/IMAGES/" + tube_type + "/";
+        struct stat st;
+        if (stat(output_dir.c_str(), &st) != 0) {
+            mkdir(output_dir.c_str(), 0777);
+        }
+        std::string roi_bmp_path = output_dir + timestamp_ms + "_datamatrix.bmp";
+        ImageUtils::saveImageToBmp(roi_img, roi_bmp_path);
+        MA_LOGI(TAG, "ROI datamatrix saved as BMP: %s", roi_bmp_path.c_str());
+    }
+
+    if (enable_denoising) {
+        MA_LOGI(TAG, "Denoising enabled");
+        roi_img = ImageUtils::denoiseImage(roi_img);
+    } else {
+        MA_LOGI(TAG, "Denoising disabled - Using raw image");
+    }
+    std::string result = ImageUtils::decodeQRCode(roi_img);
+    return result;
 }
 
 // Enregistrer le noeud dans la fabrique
