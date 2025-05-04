@@ -8,6 +8,7 @@
 
 #include "FlowConfigReader.h"
 #include "ai_config.h"
+#include "barcode_config.h"
 #include "crop_config.h"
 #include "flash_config.h"
 #include "frame_utils.h"
@@ -36,7 +37,7 @@ void saveProcessedImages(const ::cv::Mat& input_image,
                          ma_tick_t processing_time,
                          ma_tick_t& last_debug,
                          std::string file_extension = ".jpg",
-                         std::string tube_type      = "OTHER",
+                         std::string tube_type      = "TEST",
                          bool save_resized          = false,
                          bool save_raw              = false) {
     double processing_time_ms = Tick::toMilliseconds(processing_time);
@@ -209,6 +210,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
 
     // Charger la configuration du préprocesseur depuis le fichier flow.json
     ma::PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(id_);
+    ma::BarcodeConfig barcodeConfig        = ma::readBarcodeConfigFromFile();
 
     // Utiliser les paramètres de configuration lus du fichier
     bool save_raw     = preprocessorCfg.save_raw;
@@ -235,6 +237,16 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     if (preprocessorCfg.enable_ccw_rotation) {
         MA_LOGI(TAG, "Rotation CCW enabled - Rotating image 90° counter clockwise");
         raw_image = ImageUtils::rotate90CCW(raw_image);
+    }
+
+    if (barcodeConfig.enabled) {
+        // Redimensionner la ROI par 2 avant décodage
+        std::vector<std::string> codes = decodeBarcodeFromFullResImage(raw_image, debug_, tubeType);
+        if (!codes.empty()) {
+            MA_LOGI(TAG, "BarCode detected: %s", codes[0].c_str());
+        } else {
+            MA_LOGI(TAG, "No BarCode detected");
+        }
     }
 
     ::cv::Mat output_image;
@@ -602,6 +614,49 @@ void ImagePreProcessorNode::performAIDetection(::cv::Mat& output_image) {
     } else {
         MA_LOGE(TAG, "Error when performing detection: code=%d", ret);
     }
+}
+
+// Nouvelle méthode pour décoder un code-barres à partir d'une image de pleine résolution
+std::vector<std::string> ImagePreProcessorNode::decodeBarcodeFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type) {
+    Profiler p("ImagePreProcessorNode: decodeBarcodeFromFullResImage");
+    ma::BarcodeConfig barcodeCfg = ma::readBarcodeConfigFromFile();
+    std::vector<std::string> results;
+    if (!barcodeCfg.enabled) {
+        MA_LOGI(TAG, "Décodage code-barres désactivé dans la configuration");
+        return results;
+    }
+    ::cv::Mat roi_img = ImageUtils::cropImage(fullres_image, barcodeCfg.roi_xmin, barcodeCfg.roi_ymin, barcodeCfg.roi_xmax, barcodeCfg.roi_ymax);
+    if (roi_img.empty()) {
+        MA_LOGW(TAG, "Image ROI vide pour le décodage du code-barres");
+        return results;
+    }
+
+    /*::cv::Mat roi_resized;
+    ::cv::resize(roi_img, roi_resized, ::cv::Size(roi_img.cols / 2, roi_img.rows / 2));*/
+
+    if (save_roi_bmp) {
+        // Générer le chemin de sauvegarde comme dans saveProcessedImages
+        time_t now = time(nullptr);
+        struct tm tm_info;
+        localtime_r(&now, &tm_info);
+        char timestamp[64];
+        strftime(timestamp, sizeof(timestamp), "%Y_%m_%d_%H_%M_%S", &tm_info);
+        struct timeval tv;
+        ::gettimeofday(&tv, NULL);
+        char timestamp_ms[80];
+        snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
+        std::string output_dir = "/userdata/IMAGES/" + tube_type + "/";
+        struct stat st;
+        if (stat(output_dir.c_str(), &st) != 0) {
+            mkdir(output_dir.c_str(), 0777);
+        }
+        std::string roi_bmp_path = output_dir + timestamp_ms + "_barcode.bmp";
+        ImageUtils::saveImageToBmp(roi_img, roi_bmp_path);
+        MA_LOGI(TAG, "ROI sauvegardée au format BMP: %s", roi_bmp_path.c_str());
+    }
+
+    results = ImageUtils::decodeBarcodes(roi_img);
+    return results;
 }
 
 // Enregistrer le noeud dans la fabrique

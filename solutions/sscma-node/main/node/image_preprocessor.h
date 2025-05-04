@@ -39,6 +39,9 @@ public:
         return tube_type_;
     }
 
+    // Décode un code-barres à partir d'une image de pleine résolution selon la config barcode_config
+    std::vector<std::string> decodeBarcodeFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type);
+
 protected:
     void threadEntry();
     static void threadEntryStub(void* obj);
