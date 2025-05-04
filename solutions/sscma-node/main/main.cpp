@@ -78,6 +78,30 @@ void resetSystemResources() {
     MA_LOGI(TAG, "Réinitialisation des ressources système terminée.");
 }
 
+// Fonction pour démarrer l'application en mode démon
+bool runAsDaemon(StorageFile* config) {
+    char* err;
+    pid_t pid;
+
+    pid = fork();
+    if (pid < 0) {
+        err = strerror(errno);
+        MA_LOGE(TAG, "Error in fork: %s", err);
+        delete config;  // Libérer la mémoire avant de quitter
+        return false;
+    }
+    if (pid > 0) {
+        exit(0);  // Parent exits successfully
+    }
+    if (setsid() < 0) {
+        err = strerror(errno);
+        MA_LOGE(TAG, "Error in setsid: %s", err);
+        delete config;  // Libérer la mémoire avant de quitter
+        return false;
+    }
+    return true;
+}
+
 // Fonction pour fermer proprement l'application et libérer toutes les ressources
 void shutdownApplication(NodeServer* server) {
     MA_LOGI(TAG, "Arrêt propre de l'application...");
@@ -97,6 +121,117 @@ void shutdownApplication(NodeServer* server) {
 
     // Fermer le journal système
     closelog();
+}
+
+// Function to find the image preprocessor node ID from flow.json configuration
+std::string findImagePreProcessorNodeId(const std::string& config_file) {
+    std::string imageProcessorId = "";
+    std::ifstream flowifs(config_file.c_str());
+    if (flowifs.good()) {
+        json flow;
+        try {  // Ajouter une gestion d'erreur pour le parsing JSON
+            flowifs >> flow;
+            if (flow.contains("nodes") && flow["nodes"].is_array()) {
+                for (auto& elem : flow["nodes"]) {
+                    if (elem.contains("type") && elem["type"].get<std::string>() == "image_preprocessor" && elem.contains("id")) {
+                        imageProcessorId = elem["id"].get<std::string>();
+                        MA_LOGI(TAG, "Found image_preprocessor node with ID: %s in flow.json", imageProcessorId.c_str());
+                        break;
+                    }
+                }
+            }
+        } catch (const json::parse_error& e) {
+            MA_LOGE(TAG, "Failed to parse %s while searching for image_preprocessor ID: %s", config_file.c_str(), e.what());
+        }
+    }
+    return imageProcessorId;
+}
+
+// Fonction pour trouver et valider le nœud ImagePreProcessorNode
+ImagePreProcessorNode* findAndValidateImagePreProcessorNode(const std::string& config_file) {
+    Node* node = nullptr;
+
+    // D'abord, vérifier dans flow.json pour trouver l'ID du noeud image_preprocessor
+    std::string imageProcessorId = findImagePreProcessorNodeId(config_file);
+
+    // Si on a trouvé l'ID, récupérer le noeud directement
+    if (!imageProcessorId.empty()) {
+        node = NodeFactory::find(imageProcessorId);
+        if (node) {
+            MA_LOGI(TAG, "Found node with ID %s from %s.", imageProcessorId.c_str(), config_file.c_str());
+        } else {
+            MA_LOGW(TAG, "Node with ID %s specified in %s not found.", imageProcessorId.c_str(), config_file.c_str());
+        }
+    }
+
+    // Si on n'a pas trouvé l'ID ou le noeud via flow.json, essayer avec des ID par défaut
+    if (node == nullptr) {
+        MA_LOGI(TAG, "Image processor node ID not found in flow.json or node not found. Trying default IDs...");
+        const std::vector<std::string> possibleIds = {"image_preprocessor", "preprocessor", "img_proc"};
+        for (const auto& id : possibleIds) {
+            node = NodeFactory::find(id);
+            if (node) {
+                MA_LOGI(TAG, "Found image processor node with default ID: %s", id.c_str());
+                break;
+            }
+        }
+    }
+
+    // Vérifier si on a trouvé le noeud et qu'il est du bon type
+    ImagePreProcessorNode* imagePreProcessor = nullptr;
+    if (node && node->type() == "image_preprocessor") {
+        imagePreProcessor = static_cast<ImagePreProcessorNode*>(node);
+        MA_LOGI(TAG, "ImagePreProcessorNode successfully accessed");
+    } else if (node) {
+        MA_LOGE(TAG, "Found node with ID %s, but it is not of type 'image_preprocessor' (type is '%s').", node->id().c_str(), node->type().c_str());
+    }
+
+    // Vérifier si le noeud image_preprocessor a été trouvé
+    if (!imagePreProcessor) {
+        MA_LOGE(TAG, "Erreur: Noeud ImagePreProcessorNode non trouvé ou n'est pas du bon type!");
+    }
+
+    return imagePreProcessor;
+}
+
+// Function to auto-start nodes defined in flow.json
+void autoStartNodesFromConfig(const std::string& config_file, NodeServer* server) {
+    std::ifstream flowifs(config_file.c_str());
+    if (flowifs.good()) {
+        json flow;
+        try {  // Ajouter une gestion d'erreur pour le parsing JSON
+            flowifs >> flow;
+            if (flow.contains("nodes") && flow["nodes"].is_array()) {
+                for (auto& elem : flow["nodes"]) {
+                    // Vérifier si les clés existent avant de les utiliser
+                    if (!elem.contains("id") || !elem.contains("type")) {
+                        MA_LOGW(TAG, "Skipping node due to missing 'id' or 'type' in flow.json");
+                        continue;
+                    }
+                    std::string id   = elem["id"].get<std::string>();
+                    std::string type = elem["type"].get<std::string>();
+                    json cdata;
+                    cdata["type"] = type;
+                    if (elem.contains("config"))
+                        cdata["config"] = elem["config"];
+                    if (elem.contains("deps"))
+                        cdata["dependencies"] = elem["deps"];
+                    MA_LOGI(TAG, "autostart create node: %s type %s", id.c_str(), type.c_str());
+                    NodeFactory::create(id, type, cdata, server);
+                    if (auto nd = NodeFactory::find(id)) {
+                        MA_LOGI(TAG, "autostart enabling node: %s", id.c_str());
+                        nd->onControl("enabled", json(true));
+                    } else {
+                        MA_LOGW(TAG, "Failed to find node %s after creation for autostart enable.", id.c_str());
+                    }
+                }
+            }
+        } catch (const json::parse_error& e) {
+            MA_LOGE(TAG, "Failed to parse %s: %s", config_file.c_str(), e.what());
+        }
+    } else {
+        MA_LOGW(TAG, "Could not open %s for autostart.", config_file.c_str());
+    }
 }
 
 void show_version() {
@@ -166,6 +301,7 @@ AppArguments parseArguments(int argc, char** argv) {
 std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
     const auto& labelMap = labelMapper.getLabelMap();
     std::cout << "\nAvailable labels:" << std::endl;
+    std::cout << "  -1: TEST" << std::endl;
     for (const auto& [key, value] : labelMap) {
         std::cout << "  " << key << ": " << value << std::endl;
     }
@@ -214,7 +350,10 @@ std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
 
                 try {
                     int choice = std::stoi(input);
-                    if (choice == 99) {
+                    if (choice == -1) {
+                        validInput    = true;
+                        selectedLabel = "TEST";
+                    } else if (choice == 99) {
                         validInput    = true;
                         selectedLabel = "OTHER";
                     } else if (labelMap.find(choice) != labelMap.end()) {
@@ -261,6 +400,51 @@ std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
     return selectedLabel;
 }
 
+// Fonction pour exécuter la boucle principale de l'application
+void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePreProcessor) {
+    bool running                         = true;
+    AIConfig aiCfg                       = ma::readAIConfigFromFile();
+    ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg.model_labels_path.c_str());
+
+    while (running) {
+        std::string result = selectLabelInteractive(*label_mapper_);
+
+        if (!result.empty()) {
+            if (result == "q" || result == "Q") {
+                MA_LOGI(TAG, "Closing Application requested...");
+                MA_LOGI(TAG, "Switching LEDs off...");
+                Led::controlLed("white", false);
+                running = false;
+            } else {
+                FlashConfig currentFlashConfig = readFlashConfigFromFile(config_file.c_str());
+
+                if (currentFlashConfig.enabled) {
+                    MA_LOGI(TAG, "Activation du flash pour la capture...");
+                    Led::controlLed("white", true, currentFlashConfig.flash_intensity);
+                }
+
+                MA_LOGI(TAG, "Attente de %dms avant la capture...", currentFlashConfig.pre_capture_delay_ms);
+                Thread::sleep(Tick::fromMilliseconds(currentFlashConfig.pre_capture_delay_ms));
+
+                MA_LOGI(TAG, "Capture d'image demandée...");
+                capture_requested.store(true);
+                if (imagePreProcessor) {
+                    imagePreProcessor->requestCapture(result.c_str());
+                }
+
+                MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
+                Thread::sleep(Tick::fromMilliseconds(800));
+
+                MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
+                MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
+            }
+        }
+        Thread::sleep(Tick::fromMilliseconds(100));
+    }
+
+    delete label_mapper_;
+}
+
 // Fonction pour démarrer le service principal
 int startService(const std::string& config_file, bool daemon) {
     // Réinitialiser les ressources système au démarrage pour éviter les conflits
@@ -296,23 +480,7 @@ int startService(const std::string& config_file, bool daemon) {
     MA_STORAGE_GET_POD(config, MA_STORAGE_KEY_MQTT_PORT, port, 1883);
 
     if (daemon) {
-        char* err;
-        pid_t pid;
-
-        pid = fork();
-        if (pid < 0) {
-            err = strerror(errno);
-            MA_LOGE(TAG, "Error in fork: %s", err);
-            delete config;  // Libérer la mémoire avant de quitter
-            return 1;
-        }
-        if (pid > 0) {
-            exit(0);  // Parent exits successfully
-        }
-        if (setsid() < 0) {
-            err = strerror(errno);
-            MA_LOGE(TAG, "Error in setsid: %s", err);
-            delete config;  // Libérer la mémoire avant de quitter
+        if (!runAsDaemon(config)) {
             return 1;
         }
     }
@@ -321,107 +489,14 @@ int startService(const std::string& config_file, bool daemon) {
     server.setStorage(config);  // Le serveur prend possession du pointeur config
     server.start(host, port, user, password);
 
-    // Auto-start nodes defined in flow.json
-    {
-        std::ifstream flowifs(config_file.c_str());
-        if (flowifs.good()) {
-            json flow;
-            try {  // Ajouter une gestion d'erreur pour le parsing JSON
-                flowifs >> flow;
-                if (flow.contains("nodes") && flow["nodes"].is_array()) {
-                    for (auto& elem : flow["nodes"]) {
-                        // Vérifier si les clés existent avant de les utiliser
-                        if (!elem.contains("id") || !elem.contains("type")) {
-                            MA_LOGW(TAG, "Skipping node due to missing 'id' or 'type' in flow.json");
-                            continue;
-                        }
-                        std::string id   = elem["id"].get<std::string>();
-                        std::string type = elem["type"].get<std::string>();
-                        json cdata;
-                        cdata["type"] = type;
-                        if (elem.contains("config"))
-                            cdata["config"] = elem["config"];
-                        if (elem.contains("deps"))
-                            cdata["dependencies"] = elem["deps"];
-                        MA_LOGI(TAG, "autostart create node: %s type %s", id.c_str(), type.c_str());
-                        NodeFactory::create(id, type, cdata, &server);
-                        if (auto nd = NodeFactory::find(id)) {
-                            MA_LOGI(TAG, "autostart enabling node: %s", id.c_str());
-                            nd->onControl("enabled", json(true));
-                        } else {
-                            MA_LOGW(TAG, "Failed to find node %s after creation for autostart enable.", id.c_str());
-                        }
-                    }
-                }
-            } catch (const json::parse_error& e) {
-                MA_LOGE(TAG, "Failed to parse %s: %s", config_file.c_str(), e.what());
-            }
-        } else {
-            MA_LOGW(TAG, "Could not open %s for autostart.", config_file.c_str());
-        }
-    }
+    // Démarrer automatiquement les noeuds définis dans flow.json
+    autoStartNodesFromConfig(config_file, &server);
 
     // Attendre un moment pour que tous les noeuds s'initialisent correctement
     Thread::sleep(Tick::fromSeconds(2));
 
     // Récupérer une référence au noeud ImagePreProcessorNode
-    Node* node                               = nullptr;
-    ImagePreProcessorNode* imagePreProcessor = nullptr;
-
-    // Essayer de trouver un noeud de type image_preprocessor
-    // D'abord, vérifier dans flow.json pour trouver l'ID du noeud image_preprocessor
-    std::string imageProcessorId = "";
-    {
-        std::ifstream flowifs(config_file.c_str());
-        if (flowifs.good()) {
-            json flow;
-            try {  // Ajouter une gestion d'erreur pour le parsing JSON
-                flowifs >> flow;
-                if (flow.contains("nodes") && flow["nodes"].is_array()) {
-                    for (auto& elem : flow["nodes"]) {
-                        if (elem.contains("type") && elem["type"].get<std::string>() == "image_preprocessor" && elem.contains("id")) {
-                            imageProcessorId = elem["id"].get<std::string>();
-                            MA_LOGI(TAG, "Found image_preprocessor node with ID: %s in flow.json", imageProcessorId.c_str());
-                            break;
-                        }
-                    }
-                }
-            } catch (const json::parse_error& e) {
-                MA_LOGE(TAG, "Failed to parse %s while searching for image_preprocessor ID: %s", config_file.c_str(), e.what());
-            }
-        }
-    }
-
-    // Si on a trouvé l'ID, récupérer le noeud directement
-    if (!imageProcessorId.empty()) {
-        node = NodeFactory::find(imageProcessorId);
-        if (node) {
-            MA_LOGI(TAG, "Found node with ID %s from %s.", imageProcessorId.c_str(), config_file.c_str());
-        } else {
-            MA_LOGW(TAG, "Node with ID %s specified in %s not found.", imageProcessorId.c_str(), config_file.c_str());
-        }
-    }
-
-    // Si on n'a pas trouvé l'ID ou le noeud via flow.json, essayer avec des ID par défaut
-    if (node == nullptr) {
-        MA_LOGI(TAG, "Image processor node ID not found in flow.json or node not found. Trying default IDs...");
-        const std::vector<std::string> possibleIds = {"image_preprocessor", "preprocessor", "img_proc"};
-        for (const auto& id : possibleIds) {
-            node = NodeFactory::find(id);
-            if (node) {
-                MA_LOGI(TAG, "Found image processor node with default ID: %s", id.c_str());
-                break;
-            }
-        }
-    }
-
-    // Vérifier si on a trouvé le noeud et qu'il est du bon type
-    if (node && node->type() == "image_preprocessor") {
-        imagePreProcessor = static_cast<ImagePreProcessorNode*>(node);
-        MA_LOGI(TAG, "ImagePreProcessorNode successfully accessed");
-    } else if (node) {
-        MA_LOGE(TAG, "Found node with ID %s, but it is not of type 'image_preprocessor' (type is '%s').", node->id().c_str(), node->type().c_str());
-    }
+    ImagePreProcessorNode* imagePreProcessor = findAndValidateImagePreProcessorNode(config_file);
 
     // Vérifier si le noeud image_preprocessor a été trouvé
     if (!imagePreProcessor) {
@@ -430,61 +505,8 @@ int startService(const std::string& config_file, bool daemon) {
         return 1;
     }
 
-    // Boucle principale avec invite utilisateur
-    bool running                         = true;
-    AIConfig aiCfg                       = ma::readAIConfigFromFile();
-    ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg.model_labels_path.c_str());
-
-    while (running) {
-        std::string result = selectLabelInteractive(*label_mapper_);
-
-        if (!result.empty()) {
-            if (result == "q" || result == "Q") {
-                MA_LOGI(TAG, "Closing Application requested...");
-
-                // S'assurer que toutes les LEDs sont éteintes avant de quitter
-                MA_LOGI(TAG, "Switching LEDs off...");
-                // Éteindre d'abord la LED blanche (utilisée pour le flash)
-                Led::controlLed("white", false);
-                running = false;
-            } else {  // Déclencher la capture sur Entrée
-                // Lire les paramètres de configuration du flash à chaque capture
-                // pour permettre l'ajustement sans redémarrer l'application
-                FlashConfig currentFlashConfig = readFlashConfigFromFile(config_file.c_str());  // Renommé pour clarté
-
-                if (currentFlashConfig.enabled) {
-                    MA_LOGI(TAG, "Activation du flash pour la capture...");
-                    // Activer le flash (LED blanche) en utilisant directement la méthode statique de Led
-                    Led::controlLed("white", true, currentFlashConfig.flash_intensity);
-                }
-
-                // Attendre un court moment pour que la caméra s'adapte à l'éclairage
-                MA_LOGI(TAG, "Attente de %dms avant la capture...", currentFlashConfig.pre_capture_delay_ms);
-                Thread::sleep(Tick::fromMilliseconds(currentFlashConfig.pre_capture_delay_ms));
-
-                MA_LOGI(TAG, "Capture d'image demandée...");
-
-                // Demander une capture d'image
-                capture_requested.store(true);
-                if (imagePreProcessor) {
-                    imagePreProcessor->requestCapture(result.c_str());
-                }
-
-                MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
-
-                Thread::sleep(Tick::fromMilliseconds(500));  // Donner du temps pour le traitement
-                // Ajout des instructions après chaque capture pour rappeler à l'utilisateur
-                MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
-                MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
-            }
-            // Ignorer les autres caractères
-        }
-
-        // Dormir un court instant pour éviter de surcharger le CPU
-        Thread::sleep(Tick::fromMilliseconds(100));
-    }
-
-    delete label_mapper_;
+    // Exécuter la boucle principale
+    runMainLoop(config_file, imagePreProcessor);
 
     // Fermer proprement l'application
     shutdownApplication(&server);  // Le serveur gère la suppression de config
