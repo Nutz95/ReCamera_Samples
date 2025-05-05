@@ -18,7 +18,7 @@ CameraNode::CameraNode(std::string id)
       light_(0),
       preview_(false),
       websocket_(true),
-      audio_(80),
+      audio_(0),
       option_(0),
       frame_(60),
       thread_(nullptr),
@@ -351,7 +351,7 @@ void CameraNode::threadAudioEntry() {
     while (started_) {
         pcm_return = snd_pcm_readi(handle, buffer, chunk_size * 2);
         if (pcm_return == -EPIPE) {
-            MA_LOGW(TAG, "overrun occurred");
+            MA_LOGW(TAG, "pcm overrun occurred");
             if (snd_pcm_prepare(handle) < 0) {
                 MA_LOGE(TAG, "prepare failed: %s", snd_strerror(pcm_return));
                 break;
@@ -544,7 +544,7 @@ ma_err_t CameraNode::onCreate(const json& config) {
         MA_THROW(Exception(MA_ENOMEM, "Not enough memory"));
     }
 
-    if (audio_) {
+    if (audio_ != 0) {
         channels_[CHN_AUDIO].enabled    = true;
         channels_[CHN_AUDIO].configured = true;
         thread_audio_                   = new Thread((type_ + "#" + id_ + "#audio").c_str(), &CameraNode::threadAudioEntryStub, this);
@@ -701,7 +701,7 @@ ma_err_t CameraNode::onStart() {
         thread_->start(this);
     }
 
-    if (audio_ && thread_audio_ != nullptr) {
+    if (audio_ != 0 && thread_audio_ != nullptr) {
         thread_audio_->start(this);
     }
 
@@ -789,7 +789,7 @@ ma_err_t CameraNode::onStop() {
     if (thread_ != nullptr) {
         thread_->join();
     }
-    if (audio_ && thread_audio_ != nullptr) {
+    if (audio_ != 0 && thread_audio_ != nullptr) {
         thread_audio_->join();
     }
     _stopCameraSequence();  // Replaced CAMERA_DEINIT()
