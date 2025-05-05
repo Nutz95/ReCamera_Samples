@@ -28,11 +28,33 @@ public:
     void requestCapture(std::string tubeType) {
         tube_type_ = tubeType;
         capture_requested_.store(true);
+        capture_in_progress_.store(true);
+        capture_done_.store(false);
+    }
+
+    bool isCaptureRequested() const {
+        return capture_requested_.load();
     }
 
     // Nouvelle méthode pour vérifier si une capture est en cours
     bool isCapturePending() const {
-        return capture_requested_.load();
+        return (capture_requested_.load() || capture_in_progress_.load()) && !capture_done_.load();
+    }
+
+    bool isCaptureDone() const {
+        return capture_done_.load();
+    }
+
+    void setCaptureInProgress() {
+        capture_requested_.store(false);
+        capture_in_progress_.store(true);
+        capture_done_.store(false);
+    }
+
+    void setCaptureDone() {
+        capture_requested_.store(false);
+        capture_done_.store(true);
+        capture_in_progress_.store(false);
     }
 
     std::string getCurrentTubeType() const {
@@ -63,11 +85,13 @@ protected:
     std::atomic<bool> enabled_;
     Thread* thread_;
     CameraNode* camera_;
-    MessageBox input_frame_;               // Pour recevoir les frames de la caméra
-    MessageBox output_frame_;              // Pour envoyer les frames traitées
-    bool debug_;                           // Mode debug pour afficher des informations supplémentaires
-    int saved_image_count_;                // Compteur pour les images sauvegardées
-    std::atomic<bool> capture_requested_;  // Nouveau flag pour indiquer si la capture est demandée par l'utilisateur
+    MessageBox input_frame_;                 // Pour recevoir les frames de la caméra
+    MessageBox output_frame_;                // Pour envoyer les frames traitées
+    bool debug_;                             // Mode debug pour afficher des informations supplémentaires
+    int saved_image_count_;                  // Compteur pour les images sauvegardées
+    std::atomic<bool> capture_requested_;    // Nouveau flag pour indiquer si la capture est demandée par l'utilisateur
+    std::atomic<bool> capture_in_progress_;  // Flag pour indiquer si le traitement est en cours
+    std::atomic<bool> capture_done_;         // Flag pour indiquer si le traitement est terminé
     std::string tube_type_;
 
     // Nouvelles variables pour gérer l'état du flash

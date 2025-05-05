@@ -43,6 +43,7 @@
     ],
     "flash_config": {
         "flash_enabled": false,
+        "flash_dataset_mode_enabled": true,
         "flash_intensity": 255,
         "flash_duration_ms": 10,
         "pre_capture_delay_ms": 50,

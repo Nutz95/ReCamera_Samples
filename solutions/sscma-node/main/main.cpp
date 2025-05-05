@@ -400,6 +400,19 @@ std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
     return selectedLabel;
 }
 
+void performCapture(ImagePreProcessorNode* imagePreProcessor, std::string& selectedLabel) {
+    capture_requested.store(true);
+    Thread::sleep(Tick::fromMilliseconds(2));
+    if (imagePreProcessor) {
+        // enable frame capture from camera object
+        imagePreProcessor->requestCapture(selectedLabel.c_str());
+        MA_LOGI(TAG, "Capture Requested");
+        while (!imagePreProcessor->isCaptureDone()) {
+            Thread::sleep(Tick::fromMilliseconds(100));
+        }
+    }
+}
+
 // Fonction pour exécuter la boucle principale de l'application
 void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePreProcessor) {
     bool running                         = true;
@@ -407,10 +420,10 @@ void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePre
     ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg.model_labels_path.c_str());
 
     while (running) {
-        std::string result = selectLabelInteractive(*label_mapper_);
+        std::string selectedLabel = selectLabelInteractive(*label_mapper_);
 
-        if (!result.empty()) {
-            if (result == "q" || result == "Q") {
+        if (!selectedLabel.empty()) {
+            if (selectedLabel == "q" || selectedLabel == "Q") {
                 MA_LOGI(TAG, "Closing Application requested...");
                 MA_LOGI(TAG, "Switching LEDs off...");
                 Led::controlLed("white", false);
@@ -418,25 +431,23 @@ void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePre
             } else {
                 FlashConfig currentFlashConfig = readFlashConfigFromFile(config_file.c_str());
 
-                if (currentFlashConfig.enabled) {
-                    MA_LOGI(TAG, "Activation du flash pour la capture...");
+                if (currentFlashConfig.enabled || currentFlashConfig.dataset_mode_enabled) {
+                    MA_LOGI(TAG, "Flash enabled for the capture...");
                     Led::controlLed("white", true, currentFlashConfig.flash_intensity);
                 }
 
-                MA_LOGI(TAG, "Attente de %dms avant la capture...", currentFlashConfig.pre_capture_delay_ms);
+                MA_LOGI(TAG, "Waiting %dms before capture...", currentFlashConfig.pre_capture_delay_ms);
                 Thread::sleep(Tick::fromMilliseconds(currentFlashConfig.pre_capture_delay_ms));
 
-                MA_LOGI(TAG, "Capture d'image demandée...");
-                capture_requested.store(true);
-                if (imagePreProcessor) {
-                    imagePreProcessor->requestCapture(result.c_str());
+                performCapture(imagePreProcessor, selectedLabel);
+
+                if (currentFlashConfig.dataset_mode_enabled) {
+                    MA_LOGI(TAG, "Flash disabled for 2nd capture");
+                    Led::controlLed("white", false);
+                    Thread::sleep(Tick::fromMilliseconds(currentFlashConfig.pre_capture_delay_ms));
+                    // capture_requested.store(true);
+                    performCapture(imagePreProcessor, selectedLabel);
                 }
-
-                MA_LOGI(TAG, "Capture en cours, le flash s'éteindra automatiquement après le traitement...");
-                Thread::sleep(Tick::fromMilliseconds(800));
-
-                MA_LOGI(TAG, "Appuyez sur [Entrée] pour capturer une image");
-                MA_LOGI(TAG, "Appuyez sur 'q' pour quitter");
             }
         }
         Thread::sleep(Tick::fromMilliseconds(100));

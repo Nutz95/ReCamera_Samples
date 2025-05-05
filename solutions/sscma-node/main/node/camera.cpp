@@ -145,7 +145,12 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         // Libérer la frame matérielle si besoin (ex: CVI_SYS_Munmap si mappée)
         return CVI_SUCCESS;
     }
+    capture_requested.store(false);
+
     ProfilerBlock pb("vpssCallback");
+
+    MA_LOGI(TAG, "Camera capture requested");
+
     APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
     VIDEO_FRAME_INFO_S* VpssFrame     = (VIDEO_FRAME_INFO_S*)pData;
     VIDEO_FRAME_S* f                  = &VpssFrame->stVFrame;
@@ -157,13 +162,6 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         MA_LOGW(TAG, "invalid chn %d", pstVencChnCfg->VencChn);
         return CVI_SUCCESS;
     }
-
-    // Ne traiter la frame que si capture_requested est à true
-    if (!capture_requested.load()) {
-        // Libérer la frame matérielle si besoin (ex: CVI_SYS_Munmap si mappée)
-        return CVI_SUCCESS;
-    }
-    capture_requested.store(false);
 
     videoFrame* frame = new videoFrame();
     frame->chn        = pstVencChnCfg->VencChn;

@@ -118,6 +118,8 @@ ImagePreProcessorNode::ImagePreProcessorNode(std::string id)
       debug_(false),
       saved_image_count_(0),
       capture_requested_(false),
+      capture_in_progress_(false),
+      capture_done_(false),
       tube_type_("OTHER"),
       flash_active_(false),
       flash_intensity_(-1),
@@ -160,10 +162,11 @@ void ImagePreProcessorNode::threadEntry() {
 
     while (started_) {
         if (!fetchAndValidateFrame(frame)) {
+            thread_->sleep(Tick::fromMilliseconds(2));
             continue;
         }
 
-        bool should_process = capture_requested_.load();
+        bool should_process = isCaptureRequested();
 
         if (should_process) {
             processCaptureRequest(frame, last_debug, tube_type_);
@@ -193,8 +196,10 @@ bool ImagePreProcessorNode::fetchAndValidateFrame(videoFrame*& frame) {
 // Nouvelle méthode privée : processCaptureRequest
 void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug, std::string tubeType) {
     Profiler p("processCaptureRequest");
-    MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture into %s, processing frame", tubeType.c_str());
-    capture_requested_.store(false);
+    MA_LOGI(TAG, "ImagePreProcessorNode.threadEntry: User requested capture into %s, processing frame...", tubeType.c_str());
+
+    setCaptureInProgress();
+
     ma_tick_t start_time = Tick::current();
 
     Thread::enterCritical();
@@ -206,6 +211,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     if (raw_image.empty()) {
         MA_LOGW(TAG, "Échec de conversion de la frame en Mat OpenCV");
         frame->release();
+        setCaptureDone();
         return;
     }
 
@@ -278,6 +284,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
             FrameUtils::prepareAndPublishOutputFrame(output_image, frame, output_frame_, output_width_, output_height_);
         } else {
             frame->release();
+            setCaptureDone();
             return;
         }
     } else {
@@ -316,6 +323,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     }
     saved_image_count_++;
     Led::flashLed("blue", flash_intensity_, 20);
+    setCaptureDone();
 }
 
 // Nouvelle méthode privée : handleNoCaptureRequested

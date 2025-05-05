@@ -29,6 +29,10 @@ FlashConfig readFlashConfigFromFile(const std::string& filename) {
                         config.enabled = flash_config["flash_enabled"];
                     }
 
+                    if (flash_config.contains("flash_dataset_mode_enabled") && flash_config["flash_dataset_mode_enabled"].is_boolean()) {
+                        config.dataset_mode_enabled = flash_config["flash_dataset_mode_enabled"];
+                    }
+
                     if (flash_config.contains("pre_capture_delay_ms") && flash_config["pre_capture_delay_ms"].is_number()) {
                         config.pre_capture_delay_ms = flash_config["pre_capture_delay_ms"];
                     }
