@@ -7,19 +7,19 @@
 #include <unistd.h>
 
 #include "FlowConfigReader.h"
-#include "ai_config.h"
-#include "barcode_config.h"
-#include "crop_config.h"
-#include "datamatrix_config.h"
-#include "flash_config.h"
+#include "config/ai_config.h"
+#include "config/barcode_config.h"
+#include "config/crop_config.h"
+#include "config/datamatrix_config.h"
+#include "config/flash_config.h"
+#include "config/preprocessor_config.h"   // Nouveau fichier d'en-tête
+#include "config/white_balance_config.h"  // Ajout de l'include pour la nouvelle classe
 #include "frame_utils.h"
 #include "image_preprocessor.h"
 #include "image_utils.h"
 #include "label_mapper.h"
 #include "led.h"
-#include "preprocessor_config.h"  // Nouveau fichier d'en-tête
 #include "profiler.h"
-#include "white_balance_config.h"  // Ajout de l'include pour la nouvelle classe
 
 namespace ma::node {
 

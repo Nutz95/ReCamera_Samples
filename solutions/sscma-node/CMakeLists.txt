@@ -7,7 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 cmake_minimum_required(VERSION 3.10)
 
-project(sscma-node VERSION 1.0.0 LANGUAGES C CXX)
+# Récupération de la version depuis version.h pour garantir la cohérence
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.h" version_h)
+string(REGEX MATCH "PROJECT_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _ ${version_h})
+set(VERSION_FROM_HEADER ${CMAKE_MATCH_1})
+message(STATUS "Version from version.h: ${VERSION_FROM_HEADER}")
+
+project(sscma-node VERSION ${VERSION_FROM_HEADER} LANGUAGES C CXX)
+message(STATUS "Project version set to: ${PROJECT_VERSION}")
 
 set(RISCV_SDK_ROOT $ENV{RISCV_SDK_ROOT})
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/toolchain-riscv64-linux.cmake CACHE FILEPATH "toolchain file")
@@ -39,6 +46,7 @@ set(OpenCV_STATIC ON)
 set(OpenCV_INCLUDE_DIRS "/home/nra/opencv-riscv64/include/opencv4/3rdparty")
 set(OpenCV_LIB_DIR "/home/nra/opencv-riscv64/lib")
 include_directories(BEFORE /home/nra/opencv-riscv64/include/opencv4)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/main/node/config)
 link_directories(
     /home/nra/opencv-riscv64/lib
     /home/nra/reCamera/output/sg2002_recamera_emmc/install/soc_sg2002_recamera_emmc/tpu_musl_riscv64/cvitek_tpu_sdk/lib
@@ -54,7 +62,7 @@ set(OpenCV_STATIC ON)
 # Ne pas forcer le linkage statique global
 # set(CMAKE_EXE_LINKER_FLAGS "-static")
 
-find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio objdetect)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio objdetect photo)
 
 message(STATUS "OpenCV_INCLUDE_DIRS: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")
@@ -122,16 +130,49 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/postinst
         DESTINATION DEBIAN
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
+# Script preinst pour s'assurer que les anciens fichiers sont supprimés
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/preinst "#!/bin/sh
+echo 'Preparing for installation of ${CMAKE_PROJECT_NAME} ${PROJECT_VERSION}'
+
+# Supprimer l'ancien exécutable s'il existe
+if [ -f /usr/local/bin/${CMAKE_PROJECT_NAME} ]; then
+    echo 'Removing old executable...'
+    rm -f /usr/local/bin/${CMAKE_PROJECT_NAME}
+fi
+
+exit 0
+")
+
+# Installer le script pre-installation
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/preinst
+        DESTINATION DEBIAN
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
 # Install a wrapper script to easily launch sscma-node with correct LD_LIBRARY_PATH
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/sscma-node_run "#!/bin/sh
 export LD_LIBRARY_PATH=/usr/lib:/usr/local/lib:\$LD_LIBRARY_PATH
 exec /usr/local/bin/sscma-node \"\$@\"")
+
+# Installer le wrapper script
 install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/sscma-node_run DESTINATION /usr/local/bin)
 
+# Important : Pas besoin d'inclure directement le fichier main/CMakeLists.txt,
+# il sera inclus par project.cmake 
+
+# ==== Configuration système originale (pour résoudre les problèmes de dépendances) ====
 include(${ROOT_DIR}/cmake/project.cmake)
 
+# ==== Après l'inclusion de project.cmake, nous modifions target_link_libraries pour résoudre notre problème ====
 if(TARGET sscma-node)
     target_link_libraries(sscma-node PRIVATE -lopencv_objdetect -lopencv_core)
+    
+    # CRUCIAL: INSTALLATION EXPLICITE DE L'EXÉCUTABLE
+    install(TARGETS sscma-node 
+            RUNTIME DESTINATION /usr/local/bin
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    
+    # Ajouter des dépendances explicites à l'installation
+    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E echo \"Installing ${PROJECT_NAME} ${PROJECT_VERSION} to package...\")")
 endif()
 
 # Informations de packaging pour CPack
@@ -144,6 +185,11 @@ set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 
+# S'assurer que la directive d'installation sera respectée
+set(CPACK_SET_DESTDIR true)
+set(CPACK_INSTALL_PREFIX "/")
+
+# Activer CPack pour la création de packages
 include(CPack)
 
 

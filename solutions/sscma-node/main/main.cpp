@@ -21,9 +21,9 @@
 
 #include "signal.h"
 
-#include "node/ai_config.h"  // Ajout de l'include pour AIConfig
 #include "node/capture_flag.h"
-#include "node/flash_config.h"
+#include "node/config/ai_config.h"  // Ajout de l'include pour AIConfig
+#include "node/config/flash_config.h"
 #include "node/image_preprocessor.h"
 #include "node/image_utils.h"
 #include "node/label_mapper.h"  // S'assurer que le header est inclus
