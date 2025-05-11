@@ -82,7 +82,7 @@ bool Led::flashLed(const std::string& led_name, int intensity, unsigned int dura
     try {
         Led led(led_name);
         led.flash(intensity, duration_ms);
-        MA_LOGI(LED_TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);
+        /*MA_LOGI(LED_TAG, "LED %s flashée (intensité: %d, durée: %u ms)", led_name.c_str(), intensity, duration_ms);*/
         return true;
     } catch (const std::exception& e) {
         MA_LOGE(LED_TAG, "Erreur lors du flash de la LED %s: %s", led_name.c_str(), e.what());

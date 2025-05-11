@@ -1,0 +1,135 @@
+{
+	"folders": [
+		{
+			"name": "reCamera",
+			"path": "../../../../../reCamera"
+		},
+		{
+			"name": "reCamera-OS",
+			"path": "../../../../../reCamera-OS"
+		},
+		{
+			"name": "reCameraOS_SDK",
+			"path": "../../../../../reCameraOS_SDK"
+		},
+		{
+			"name": "sg2002_recamera_emmc",
+			"path": "../../../../../sg2002_recamera_emmc"
+		},
+		{
+			"name": "sscma-node",
+			"path": "../.."
+		},
+		{
+			"name": "opencv",
+			"path": "../../../../../opencv"
+		},
+		{
+			"name": "opencv_contrib",
+			"path": "../../../../../opencv_contrib"
+		},
+		{
+			"name": "opencv-riscv64",
+			"path": "../../../../../opencv-riscv64"
+		},
+		{
+			"path": "../../../../../.github"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"string_view": "cpp",
+			"numbers": "cpp",
+			"array": "cpp",
+			"atomic": "cpp",
+			"bit": "cpp",
+			"*.tcc": "cpp",
+			"cctype": "cpp",
+			"chrono": "cpp",
+			"clocale": "cpp",
+			"cmath": "cpp",
+			"codecvt": "cpp",
+			"compare": "cpp",
+			"complex": "cpp",
+			"concepts": "cpp",
+			"condition_variable": "cpp",
+			"csignal": "cpp",
+			"cstdarg": "cpp",
+			"cstddef": "cpp",
+			"cstdint": "cpp",
+			"cstdio": "cpp",
+			"cstdlib": "cpp",
+			"cstring": "cpp",
+			"ctime": "cpp",
+			"cwchar": "cpp",
+			"cwctype": "cpp",
+			"deque": "cpp",
+			"forward_list": "cpp",
+			"list": "cpp",
+			"map": "cpp",
+			"set": "cpp",
+			"string": "cpp",
+			"unordered_map": "cpp",
+			"unordered_set": "cpp",
+			"vector": "cpp",
+			"exception": "cpp",
+			"algorithm": "cpp",
+			"functional": "cpp",
+			"iterator": "cpp",
+			"memory": "cpp",
+			"memory_resource": "cpp",
+			"netfwd": "cpp",
+			"numeric": "cpp",
+			"optional": "cpp",
+			"random": "cpp",
+			"ratio": "cpp",
+			"system_error": "cpp",
+			"tuple": "cpp",
+			"type_traits": "cpp",
+			"utility": "cpp",
+			"hash_map": "cpp",
+			"hash_set": "cpp",
+			"slist": "cpp",
+			"fstream": "cpp",
+			"future": "cpp",
+			"initializer_list": "cpp",
+			"iomanip": "cpp",
+			"iosfwd": "cpp",
+			"iostream": "cpp",
+			"istream": "cpp",
+			"limits": "cpp",
+			"mutex": "cpp",
+			"new": "cpp",
+			"ostream": "cpp",
+			"semaphore": "cpp",
+			"sstream": "cpp",
+			"stdexcept": "cpp",
+			"stop_token": "cpp",
+			"streambuf": "cpp",
+			"thread": "cpp",
+			"cfenv": "cpp",
+			"cinttypes": "cpp",
+			"typeinfo": "cpp",
+			"valarray": "cpp",
+			"bitset": "cpp",
+			"regex": "cpp",
+			"shared_mutex": "cpp",
+			"span": "cpp",
+			"typeindex": "cpp",
+			"*.inc": "cpp",
+			"any": "cpp",
+			"barrier": "cpp",
+			"charconv": "cpp",
+			"coroutine": "cpp",
+			"csetjmp": "cpp",
+			"cuchar": "cpp",
+			"source_location": "cpp",
+			"rope": "cpp",
+			"latch": "cpp",
+			"ranges": "cpp",
+			"scoped_allocator": "cpp",
+			"syncstream": "cpp",
+			"variant": "cpp"
+		}
+	}
+}

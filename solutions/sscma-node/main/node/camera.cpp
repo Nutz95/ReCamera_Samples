@@ -141,25 +141,31 @@ int CameraNode::vencCallback(void* pData, void* pArgs) {
 }
 
 int CameraNode::vpssCallback(void* pData, void* pArgs) {
+    Thread::enterCritical();
     if (!capture_requested.load()) {
         // Libérer la frame matérielle si besoin (ex: CVI_SYS_Munmap si mappée)
+        Thread::exitCritical();
         return CVI_SUCCESS;
     }
     capture_requested.store(false);
 
     ProfilerBlock pb("vpssCallback");
 
-    MA_LOGI(TAG, "Camera capture requested");
+    MA_LOGI(TAG, "[Camera] capture requested");
 
     APP_VENC_CHN_CFG_S* pstVencChnCfg = (APP_VENC_CHN_CFG_S*)pArgs;
     VIDEO_FRAME_INFO_S* VpssFrame     = (VIDEO_FRAME_INFO_S*)pData;
     VIDEO_FRAME_S* f                  = &VpssFrame->stVFrame;
 
     if (!started_ || !enabled_ || channels_[pstVencChnCfg->VencChn].msgboxes.empty()) {
+        MA_LOGI(TAG, "[Camera] returned frame, but not started");
+        Thread::exitCritical();
         return CVI_SUCCESS;
     }
     if (pstVencChnCfg->VencChn >= CHN_MAX) {
         MA_LOGW(TAG, "invalid chn %d", pstVencChnCfg->VencChn);
+        MA_LOGI(TAG, "[Camera] returned frame, but invalid chn");
+        Thread::exitCritical();
         return CVI_SUCCESS;
     }
 
@@ -171,19 +177,17 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
     frame->img.format = channels_[pstVencChnCfg->VencChn].format;
     frame->img.key    = true;
 
+
     // Mapping mémoire physique -> virtuelle pour RAW
     if (f->pu8VirAddr[0]) {
-        Thread::enterCritical();
         frame->img.physical = false;
         frame->img.data     = new uint8_t[frame->img.size];
         memcpy(frame->img.data, f->pu8VirAddr[0], frame->img.size);
-        Thread::exitCritical();
     } else {  // 150ns
         // Mapping mémoire physique
         uint64_t phyAddr = f->u64PhyAddr[0];
         uint32_t size    = frame->img.size;
 
-        Thread::enterCritical();
         void* virtAddr = CVI_SYS_Mmap(phyAddr, size);
 
         if (!virtAddr) {
@@ -196,7 +200,6 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
         frame->img.data     = new uint8_t[size];
         memcpy(frame->img.data, virtAddr, size);
         CVI_SYS_Munmap(virtAddr, size);
-        Thread::exitCritical();
     }
 
     frame->timestamp = Tick::current();
@@ -207,7 +210,7 @@ int CameraNode::vpssCallback(void* pData, void* pArgs) {
             frame->release();
         }
     }
-
+    Thread::exitCritical();
     return CVI_SUCCESS;
 }
 

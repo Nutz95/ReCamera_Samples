@@ -164,7 +164,7 @@ include(${ROOT_DIR}/cmake/project.cmake)
 
 # ==== Après l'inclusion de project.cmake, nous modifions target_link_libraries pour résoudre notre problème ====
 if(TARGET sscma-node)
-    target_link_libraries(sscma-node PRIVATE -lopencv_objdetect -lopencv_core)
+    target_link_libraries(sscma-node PRIVATE -lopencv_objdetect -lopencv_core /home/nra/zxing-cpp-riscv64/lib/libZXing.a)
     
     # CRUCIAL: INSTALLATION EXPLICITE DE L'EXÉCUTABLE
     install(TARGETS sscma-node 

@@ -180,7 +180,7 @@ ma_err_t AIModelProcessor::runDetection(::cv::Mat& image) {
     }
 
     // Prétraiter l'image
-    /*::cv::Mat processedImage = preprocessImage(image);
+    ::cv::Mat processedImage = preprocessImage(image);
 
     Profiler p("AI: runDetection");
     // Préparer l'image pour le modèle
@@ -189,15 +189,6 @@ ma_err_t AIModelProcessor::runDetection(::cv::Mat& image) {
     img.size   = processedImage.rows * processedImage.cols * processedImage.channels();
     img.width  = processedImage.cols;
     img.height = processedImage.rows;
-    img.format = MA_PIXEL_FORMAT_RGB888;
-    img.rotate = MA_PIXEL_ROTATE_0;*/
-    Profiler p("AI: runDetection");
-    // Préparer l'image pour le modèle
-    ma_img_t img;
-    img.data   = (uint8_t*)image.data;
-    img.size   = image.rows * image.cols * image.channels();
-    img.width  = image.cols;
-    img.height = image.rows;
     img.format = MA_PIXEL_FORMAT_RGB888;
     img.rotate = MA_PIXEL_ROTATE_0;
 
@@ -279,4 +270,4 @@ ma_output_type_t AIModelProcessor::getModelOutputType() const {
     return model_->getOutputType();
 }
 
-}  // namespace ma
+}  // namespace ma::node

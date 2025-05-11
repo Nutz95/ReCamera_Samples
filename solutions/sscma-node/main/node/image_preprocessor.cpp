@@ -71,13 +71,13 @@ void saveProcessedImages(const ::cv::Mat& input_image,
         // Utilisation de la nouvelle classe WhiteBalanceConfig pour lire les paramètres
         // On n'a plus besoin de passer l'ID du nœud car les paramètres sont au niveau racine
         ma::WhiteBalanceConfig wbConfig = ma::readWhiteBalanceConfigFromFile();
-        float red_balance_factor        = wbConfig.red_balance_factor;
-        float green_balance_factor      = wbConfig.green_balance_factor;
-        float blue_balance_factor       = wbConfig.blue_balance_factor;
+        float red_balance_factor        = !wbConfig.enabled ? 1.0f : wbConfig.red_balance_factor;
+        float green_balance_factor      = !wbConfig.enabled ? 1.0f : wbConfig.green_balance_factor;
+        float blue_balance_factor       = !wbConfig.enabled ? 1.0f : wbConfig.blue_balance_factor;
 
         if (save_raw) {
             bool input_saved = ImageUtils::saveImageToBmp(input_image, raw_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
-            MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", raw_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
+            MA_LOGI(TAG, "Raw image Saved: %s (%s) (Image mapping into memory: %.2f ms)", raw_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
         }
 
         if (!output_image.empty() && save_resized) {
@@ -206,6 +206,8 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     ::cv::Mat raw_image = FrameUtils::convertFrameToMat(frame);
     Thread::exitCritical();
 
+    ::cv::Mat cropped_image;
+
     Led::controlLed("white", false);
 
     if (raw_image.empty()) {
@@ -219,6 +221,7 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     ma::PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(id_);
     ma::BarcodeConfig barcodeConfig        = ma::readBarcodeConfigFromFile();
     ma::DatamatrixConfig datamatrixConfig  = ma::readDatamatrixConfigFromFile();
+    ma::WhiteBalanceConfig wbConfig        = ma::readWhiteBalanceConfigFromFile();
 
     // Utiliser les paramètres de configuration lus du fichier
     bool save_raw     = preprocessorCfg.save_raw;
@@ -226,27 +229,34 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
     enable_denoising_ = preprocessorCfg.enable_denoising;
     debug_            = preprocessorCfg.debug;
 
-    MA_LOGI(TAG, "Configuration chargée: save_raw=%s, enable_resize=%s, enable_denoising=%s", save_raw ? "true" : "false", enable_resize_ ? "true" : "false", enable_denoising_ ? "true" : "false");
+    /*MA_LOGI(TAG, "Configuration chargée: save_raw=%s, enable_resize=%s, enable_denoising=%s", save_raw ? "true" : "false", enable_resize_ ? "true" : "false", enable_denoising_ ? "true" : "false");*/
 
     // Lecture dynamique des paramètres de crop
     ma::CropConfig cropCfg = ma::readCropConfigFromFile();
     if (cropCfg.enabled) {
-        MA_LOGI(TAG, "Cropping enabled - Region [%d,%d] à [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
-        raw_image = ImageUtils::cropImage(raw_image, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+        MA_LOGI(TAG, "Cropping enabled - Region [%d,%d] to [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+        cropped_image = ImageUtils::cropImage(raw_image, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+    } else {
+        cropped_image = raw_image.clone();
     }
 
     if (preprocessorCfg.enable_ccw_rotation) {
         MA_LOGI(TAG, "Rotation CCW enabled - Rotating image 90° counter clockwise");
-        raw_image = ImageUtils::rotate90CCW(raw_image);
+        cropped_image = ImageUtils::rotate90CCW(cropped_image);
     }
 
     if (barcodeConfig.enabled) {
         // Redimensionner la ROI par 2 avant décodage
         std::vector<std::string> codes = decodeBarcodeFromFullResImage(raw_image, debug_, tubeType);
         if (!codes.empty()) {
-            MA_LOGI(TAG, "BarCode detected: %s", codes[0].c_str());
+            MA_LOGI(TAG, "=====================================");
+            MA_LOGI(TAG, "| BarCode detected (%zu): %s |", codes.size(), codes[0].c_str());
+            MA_LOGI(TAG, "=====================================");
+
         } else {
-            MA_LOGI(TAG, "No BarCode detected");
+            MA_LOGI(TAG, "=======================");
+            MA_LOGI(TAG, "| No BarCode detected |");
+            MA_LOGI(TAG, "=======================");
         }
     }
 
@@ -254,22 +264,30 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         // Redimensionner la ROI par 2 avant décodage
         std::string datamatrix = decodeDatamatrixFromFullResImage(raw_image, debug_, tubeType, enable_denoising_);
         if (!datamatrix.empty()) {
-            MA_LOGI(TAG, "Datamatrix detected: %s", datamatrix.c_str());
+            MA_LOGI(TAG, "=====================================");
+            MA_LOGI(TAG, "| Datamatrix detected: %s |", datamatrix.c_str());
+            MA_LOGI(TAG, "=====================================");
         } else {
-            MA_LOGI(TAG, "No Datamatrix detected");
+            MA_LOGI(TAG, "=========================");
+            MA_LOGI(TAG, "| No Datamatrix detected |");
+            MA_LOGI(TAG, "=========================");
         }
     }
 
     ::cv::Mat output_image;
     if (enable_resize_) {
         MA_LOGI(TAG, "Resizing enabled - applying resizing to %dx%d", output_width_, output_height_);
-        output_image = ImageUtils::resizeImage(raw_image, output_width_, output_height_);
+        output_image = ImageUtils::resizeImage(cropped_image, output_width_, output_height_);
     } else {
-        MA_LOGI(TAG, "Resizing disabled");
         output_image = raw_image.clone();
     }
 
-    MA_LOGI(TAG, "Checking to perform AI detection: %s, model loaded: %s", enable_ai_detection_ ? "true" : "false", ai_processor_->isModelLoaded() ? "true" : "false");
+    if (wbConfig.enabled) {
+        MA_LOGI(TAG, "White balance enabled - applying white balance (red: %.2f, green: %.2f,blue: %.2f)", wbConfig.red_balance_factor, wbConfig.green_balance_factor, wbConfig.blue_balance_factor);
+        output_image = ImageUtils::whiteBalance(output_image, wbConfig.red_balance_factor, wbConfig.green_balance_factor, wbConfig.blue_balance_factor);
+    }
+
+    /*MA_LOGI(TAG, "Checking to perform AI detection: %s, model loaded: %s", enable_ai_detection_ ? "true" : "false", ai_processor_->isModelLoaded() ? "true" : "false");*/
     // Exécuter la détection IA si elle est activée
     if (enable_ai_detection_ && ai_processor_ != nullptr && ai_processor_->isModelLoaded() && output_image.empty() == false) {
         performAIDetection(output_image);
@@ -305,16 +323,17 @@ void ImagePreProcessorNode::processCaptureRequest(videoFrame* frame, ma_tick_t& 
         snprintf(timestamp_ms, sizeof(timestamp_ms), "%s_%03ld", timestamp, tv.tv_usec / 1000);
         std::string input_filename = output_dir + timestamp_ms + "_raw" + ".bmp";
 
-
         // Ne sauvegarder l'image brute que si save_raw est activé
         if (save_raw) {
-            ma::WhiteBalanceConfig wbConfig = ma::readWhiteBalanceConfigFromFile();
-            float red_balance_factor        = wbConfig.red_balance_factor;
-            float green_balance_factor      = wbConfig.green_balance_factor;
-            float blue_balance_factor       = wbConfig.blue_balance_factor;
-
-            MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_balance_factor, green_balance_factor, blue_balance_factor);
-            bool input_saved = ImageUtils::saveImageToBmp(raw_image, input_filename, red_balance_factor, green_balance_factor, blue_balance_factor);
+            if (wbConfig.enabled) {
+                MA_LOGI(TAG,
+                        "White balance enabled - applying white balance (red: %.2f, green: %.2f,blue: %.2f)",
+                        wbConfig.red_balance_factor,
+                        wbConfig.green_balance_factor,
+                        wbConfig.blue_balance_factor);
+                raw_image = ImageUtils::whiteBalance(raw_image, wbConfig.red_balance_factor, wbConfig.green_balance_factor, wbConfig.blue_balance_factor);
+            }
+            bool input_saved = ImageUtils::saveImageToBmp(raw_image, input_filename);
             MA_LOGI(TAG, "Image brute sauvegardée: %s (%s) (Mapping de l'image en mémoire: %.2f ms)", input_filename.c_str(), input_saved ? "OK" : "ÉCHEC", Tick::toMilliseconds(processing_time));
         } else {
             MA_LOGI(TAG, "Sauvegarde de l'image brute désactivée (save_raw=false)");
@@ -614,12 +633,12 @@ void ImagePreProcessorNode::performAIDetection(::cv::Mat& output_image) {
         ai_processor_->drawDetectionResults(output_image);
 
         // Afficher les statistiques de performance
-        ma_perf_t perf = ai_processor_->getPerformanceStats();
-        MA_LOGI(TAG, "IA Performance: prétraitement=%ldms, inférence=%ldms, post-traitement=%ldms", perf.preprocess, perf.inference, perf.postprocess);
+        /*ma_perf_t perf = ai_processor_->getPerformanceStats();
+        MA_LOGI(TAG, "IA Performance: prétraitement=%ldms, inférence=%ldms, post-traitement=%ldms", perf.preprocess, perf.inference, perf.postprocess);*/
 
         // Afficher les résultats de détection
         auto results = ai_processor_->getDetectionResults();
-        MA_LOGI(TAG, "IA Detections: %zu objets detected", results.size());
+        MA_LOGI(TAG, "IA Detections: ================================================> %zu objets detected", results.size());
         for (const auto& result : results) {
             std::string label = label_mapper_ ? label_mapper_->getLabel(result.target) : std::to_string(result.target);
             MA_LOGI(TAG, "  - Objet: classe=%d (%s), score=%.3f, position=[%.2f, %.2f, %.2f, %.2f]", result.target, label.c_str(), result.score, result.x, result.y, result.w, result.h);
@@ -635,17 +654,17 @@ std::vector<std::string> ImagePreProcessorNode::decodeBarcodeFromFullResImage(co
     ma::BarcodeConfig barcodeCfg = ma::readBarcodeConfigFromFile();
     std::vector<std::string> results;
     if (!barcodeCfg.enabled) {
-        MA_LOGI(TAG, "Décodage code-barres désactivé dans la configuration");
+        MA_LOGI(TAG, "Barcode decoding disabled");
         return results;
     }
     ::cv::Mat roi_img = ImageUtils::cropImage(fullres_image, barcodeCfg.roi_xmin, barcodeCfg.roi_ymin, barcodeCfg.roi_xmax, barcodeCfg.roi_ymax);
+
+    // draws crop location in the fullres image
+    ::cv::rectangle(fullres_image, ::cv::Point(barcodeCfg.roi_xmin, barcodeCfg.roi_ymin), ::cv::Point(barcodeCfg.roi_xmax, barcodeCfg.roi_ymax), ::cv::Scalar(0, 255, 0), 2);
     if (roi_img.empty()) {
-        MA_LOGW(TAG, "Image ROI vide pour le décodage du code-barres");
+        MA_LOGW(TAG, "Image ROI empty for barcode decoding");
         return results;
     }
-
-    /*::cv::Mat roi_resized;
-    ::cv::resize(roi_img, roi_resized, ::cv::Size(roi_img.cols / 2, roi_img.rows / 2));*/
 
     if (save_roi_bmp) {
         // Générer le chemin de sauvegarde comme dans saveProcessedImages
@@ -663,13 +682,15 @@ std::vector<std::string> ImagePreProcessorNode::decodeBarcodeFromFullResImage(co
         if (stat(output_dir.c_str(), &st) != 0) {
             mkdir(output_dir.c_str(), 0777);
         }
+
+        // Save both the grayscale and binary images for comparison
         std::string roi_bmp_path = output_dir + timestamp_ms + "_barcode.bmp";
         ImageUtils::saveImageToBmp(roi_img, roi_bmp_path);
-        MA_LOGI(TAG, "ROI sauvegardée au format BMP: %s", roi_bmp_path.c_str());
+        MA_LOGI(TAG, "ROI Saved: %s", roi_bmp_path.c_str());
     }
 
-    results = ImageUtils::decodeBarcodes(roi_img);
-    return results;
+    // Try to decode from the binary image
+    return ImageUtils::decodeBarcodes(roi_img);
 }
 
 // Nouvelle méthode pour décoder un datamatrix à partir d'une image de pleine résolution
@@ -685,6 +706,14 @@ std::string ImagePreProcessorNode::decodeDatamatrixFromFullResImage(const ::cv::
         MA_LOGW(TAG, "Image ROI empty for datamatrix decoding");
         return std::string();
     }
+
+    // draws crop location in the fullres image
+    ::cv::rectangle(fullres_image, ::cv::Point(datamatrixCfg.roi_xmin, datamatrixCfg.roi_ymin), ::cv::Point(datamatrixCfg.roi_xmax, datamatrixCfg.roi_ymax), ::cv::Scalar(0, 255, 0), 2);
+    if (roi_img.empty()) {
+        MA_LOGW(TAG, "Image ROI empty for barcode decoding");
+        return std::string();
+    }
+
     if (save_roi_bmp) {
         time_t now = time(nullptr);
         struct tm tm_info;

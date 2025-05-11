@@ -4,20 +4,17 @@ set(incs ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/node
 )
 
+# Ajout du header ZXing
+include_directories(/home/nra/zxing-cpp-riscv64/include)
+
 # Add paths to your custom OpenCV installation
 set(OpenCV_DIR "/home/nra/opencv-riscv64/lib/cmake/opencv4")
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio objdetect)
 
-# Supprimer l'inclusion potentiellement polluante du SDK OpenCV
-# include_directories(${OpenCV_INCLUDE_DIRS})
-
-# Link OpenCV statically
+# Link ZXing statiquement
+set(ZXING_LIB /home/nra/zxing-cpp-riscv64/lib/libZXing.a)
 set(OpenCV_STATIC_LIBS ${OpenCV_LIBS})
-# Supprime le linkage statique global si présent
-# set(CMAKE_EXE_LINKER_FLAGS "-static")
-
-# Add OpenCV libraries to the project
-set(EXTRA_LIBS ${OpenCV_STATIC_LIBS} ${EXTRA_LIBS})
+set(EXTRA_LIBS ${OpenCV_STATIC_LIBS} ${ZXING_LIB} ${EXTRA_LIBS})
 
 component_register(
     COMPONENT_NAME main

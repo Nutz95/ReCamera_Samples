@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>  // Include for gettimeofday
 
+#include "barcode_decoder_zx.h"
 #include "image_utils.h"
 #include "logger.hpp"
 #include "profiler.h"
@@ -61,7 +62,7 @@ bool ImageUtils::saveImageToJpeg(const ::cv::Mat& image, const std::string& file
 
         ::cv::merge(channels, balanced_image);
     }
-    MA_LOGI(TAG, "Applied white balance with blue factor: %.2f", blue_factor);
+    MA_LOGI(TAG, "Applied white balance with red factor: %.2f, green factor: %.2f, blue factor: %.2f", red_factor, green_factor, blue_factor);
     return balanced_image;
 }
 
@@ -166,24 +167,19 @@ bool ImageUtils::saveImageToBmp(const ::cv::Mat& image, const std::string& filep
 // Détection et décodage de QR code datamatrix
 std::string ImageUtils::decodeQRCode(const ::cv::Mat& image) {
     Profiler p("decodeQRCode");
-
-    std::vector<std::string> decoded_info, decoded_type;
-    std::vector<::cv::Point> corners;
-
-    ::cv::Ptr<::cv::barcode::BarcodeDetector> bardet = ::cv::makePtr<cv::barcode::BarcodeDetector>();
-    bardet->detectAndDecodeWithType(image, decoded_info, decoded_type, corners);
-
-    for (size_t i = 0; i < decoded_info.size(); ++i) {
-        if (!decoded_info[i].empty()) {
-            MA_LOGI(TAG, "Code Detected: %s (type: %s)", decoded_info[i].c_str(), decoded_type[i].c_str());
-
-            // Si on veut uniquement le premier DataMatrix
-            if (decoded_type[i] == "DATAMATRIX") {
-                return decoded_info[i];
-            }
-        }
+    // Convertir en niveaux de gris pour ZXing
+    cv::Mat gray;
+    if (image.channels() == 1) {
+        gray = image;
+    } else {
+        cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
     }
-
+    BarcodeDecoderZX decoder;
+    auto result = decoder.decode(gray);
+    if (result.success && result.format == "DataMatrix" && !result.text.empty()) {
+        MA_LOGI(TAG, "DataMatrix Detected by ZXing: %s", result.text.c_str());
+        return result.text;
+    }
     // Aucun DataMatrix trouvé
     return std::string();
 }
@@ -191,10 +187,19 @@ std::string ImageUtils::decodeQRCode(const ::cv::Mat& image) {
 // Détection et décodage de codes-barres (tous types)
 std::vector<std::string> ImageUtils::decodeBarcodes(const ::cv::Mat& image) {
     Profiler p("decodeBarcodes");
-    std::vector<std::string> decoded_info, decoded_type;
-    std::vector<::cv::Point> corners;
-    ::cv::Ptr<::cv::barcode::BarcodeDetector> bardet = ::cv::makePtr<cv::barcode::BarcodeDetector>();
-    bardet->detectAndDecodeWithType(image, decoded_info, decoded_type, corners);
+    // Convertir en niveaux de gris pour ZXing
+    cv::Mat gray;
+    if (image.channels() == 1) {
+        gray = image;
+    } else {
+        cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+    }
+    std::vector<std::string> decoded_info;
+    BarcodeDecoderZX decoder;
+    auto result = decoder.decode(gray);
+    if (result.success && !result.text.empty()) {
+        decoded_info.push_back(result.text);
+    }
     return decoded_info;
 }
 

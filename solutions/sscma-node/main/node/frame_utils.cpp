@@ -15,7 +15,7 @@ namespace ma::node {
     ::cv::Mat raw_image;
     Profiler p("convertFrameToMat");
     // Ajouter un log pour voir quel format d'image est reçu
-    MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d, channel=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical, frame->chn);
+    // MA_LOGI(TAG, "Converting frame: format=%d, size=%dx%d, physical=%d, channel=%d", frame->img.format, frame->img.width, frame->img.height, frame->img.physical, frame->chn);
 
     if (frame->img.format == MA_PIXEL_FORMAT_RGB888) {
         raw_image = ::cv::Mat(frame->img.height, frame->img.width, CV_8UC3, frame->img.data);
@@ -43,8 +43,6 @@ namespace ma::node {
 
     if (raw_image.empty()) {
         MA_LOGW(TAG, "Conversion résulte en une image vide");
-    } else {
-        MA_LOGI(TAG, "Image convertie avec succès: %dx%d", raw_image.cols, raw_image.rows);
     }
 
     return raw_image;
@@ -79,7 +77,7 @@ bool FrameUtils::prepareAndPublishOutputFrame(const ::cv::Mat& output_image, vid
     bool success = output_frame.post(output_frame_ptr, Tick::fromMilliseconds(50));
     if (!success) {
         output_frame_ptr->release();
-        MA_LOGW(TAG, "Impossible de poster la frame traitée - dépassement de délai");
+        MA_LOGW(TAG, "Impossible to post the output frame - timeout");
     }
 
     return success;

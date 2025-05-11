@@ -30,7 +30,7 @@
                 "width": 640,
                 "height": 640,
                 "debug": true,
-                "enable_resize": false,
+                "enable_resize": true,
                 "enable_denoising": false,
                 "enable_ccw_rotation": false,
                 "save_raw": true,
@@ -50,11 +50,11 @@
         "disable_red_led_blinking": true
     },
     "crop_config": {
-        "enabled": false,
-        "xmin": 0,
-        "ymin": 375,
-        "xmax": 1470,
-        "ymax": 674
+        "enabled": true,
+        "xmin": 800,
+        "ymin": 48,
+        "xmax": 1920,
+        "ymax": 1169
     },
     "barcode_config": {
         "enabled": false,
@@ -71,13 +71,14 @@
         "roi_ymax": 621
     },
     "white_balance_config": {
+        "enabled": false,
         "red_balance_factor": 0.8,
         "green_balance_factor": 0.8,
         "blue_balance_factor": 0.6
     },
     "ai_config": {
         "enabled": true,
-        "model_path": "/userdata/MODEL/stago.cvimodel",
+        "model_path": "/userdata/MODEL/2025_05_09_yolo11n_1684x_int8_sym.cvimodel",
         "model_labels_path": "/userdata/MODEL/labels.json",
         "threshold": 0.5
     }
