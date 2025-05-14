@@ -371,6 +371,7 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
 
     AIConfig aiCfg          = ma::readAIConfigFromFile();
     enable_ai_detection_    = aiCfg.enabled;
+    ai_enable_RGB_to_BGR    = aiCfg.enable_RGB_to_BGR_convertion;
     ai_model_path_          = aiCfg.model_path;
     ai_model_labels_path_   = aiCfg.model_labels_path;
     ai_detection_threshold_ = aiCfg.threshold;
@@ -619,22 +620,15 @@ void ImagePreProcessorNode::performAIDetection(::cv::Mat& output_image) {
     MA_LOGI(TAG, "AI detection enabled. Performing detection...");
 
     // Convertir l'image en RGB si elle est en BGR (OpenCV utilise BGR par défaut)
-    ::cv::Mat rgb_image;
+    ::cv::Mat image = output_image.clone();
 
-    rgb_image = output_image.clone();
-    //}
-
-    MA_LOGI(TAG, "Running AI detection on image of size: %dx%d", rgb_image.cols, rgb_image.rows);
+    MA_LOGI(TAG, "Running AI detection on image of size: %dx%d", image.cols, image.rows);
     // Exécuter la détection d'objets
-    ma_err_t ret = ai_processor_->runDetection(rgb_image);
+    ma_err_t ret = ai_processor_->runDetection(image, ai_enable_RGB_to_BGR);
     if (ret == MA_OK) {
         MA_LOGI(TAG, "AI detection completed successfully");
         // Dessiner les résultats de détection sur l'image
         ai_processor_->drawDetectionResults(output_image);
-
-        // Afficher les statistiques de performance
-        /*ma_perf_t perf = ai_processor_->getPerformanceStats();
-        MA_LOGI(TAG, "IA Performance: prétraitement=%ldms, inférence=%ldms, post-traitement=%ldms", perf.preprocess, perf.inference, perf.postprocess);*/
 
         // Afficher les résultats de détection
         auto results = ai_processor_->getDetectionResults();

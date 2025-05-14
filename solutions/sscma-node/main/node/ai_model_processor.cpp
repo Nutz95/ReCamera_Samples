@@ -94,7 +94,7 @@ bool AIModelProcessor::isModelLoaded() const {
     return modelLoaded_;
 }
 
-::cv::Mat AIModelProcessor::preprocessImage(::cv::Mat& image, bool forceResize) {
+::cv::Mat AIModelProcessor::preprocessImage(::cv::Mat& image, bool forceResize, bool convertRgbToBgr) {
     Profiler p("AI: preprocessImage");
     int ih = image.rows;
     int iw = image.cols;
@@ -122,13 +122,9 @@ bool AIModelProcessor::isModelLoaded() const {
             ::cv::split(image, channels);
 
             // Si le premier canal est B et le dernier canal est R, c'est du BGR (format OpenCV par défaut)
-            if (::cv::countNonZero(channels[0] - channels[2]) > 0) {
+            if (convertRgbToBgr) {
                 ::cv::cvtColor(image, processedImage, ::cv::COLOR_BGR2RGB);
                 MA_LOGI(TAG, "Image converted from BGR to RGB format");
-            } else {
-                // Déjà en RGB
-                processedImage = image.clone();
-                MA_LOGI(TAG, "Image already in RGB format, no conversion needed");
             }
         } else {
             MA_LOGW(TAG, "Image has %d channels, expected 3 channels", image.channels());
@@ -159,7 +155,7 @@ bool AIModelProcessor::isModelLoaded() const {
         ::cv::split(paddedImage, channels);
 
         // Si le premier canal est B et le dernier canal est R, c'est du BGR
-        if (::cv::countNonZero(channels[0] - channels[2]) > 0) {
+        if (convertRgbToBgr) {
             ::cv::cvtColor(paddedImage, paddedImage, ::cv::COLOR_BGR2RGB);
             MA_LOGI(TAG, "Image resized and converted from BGR to RGB format");
         } else {
@@ -172,7 +168,7 @@ bool AIModelProcessor::isModelLoaded() const {
 }
 
 
-ma_err_t AIModelProcessor::runDetection(::cv::Mat& image) {
+ma_err_t AIModelProcessor::runDetection(::cv::Mat& image, bool convertRgbToBgr) {
 
     if (!modelLoaded_ || detector_ == nullptr) {
         MA_LOGE(TAG, "Model not loaded or not a detector model");
@@ -180,7 +176,7 @@ ma_err_t AIModelProcessor::runDetection(::cv::Mat& image) {
     }
 
     // Prétraiter l'image
-    ::cv::Mat processedImage = preprocessImage(image);
+    ::cv::Mat processedImage = preprocessImage(image, false, convertRgbToBgr);
 
     Profiler p("AI: runDetection");
     // Préparer l'image pour le modèle

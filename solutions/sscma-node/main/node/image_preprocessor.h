@@ -99,7 +99,8 @@ protected:
     int flash_intensity_;             // Intensité du flash pour le flash de confirmation
 
     // Nouvelles variables pour les paramètres de traitement d'image
-    bool enable_resize_;                 // Activer/désactiver le redimensionnement
+    bool enable_resize_;  // Activer/désactiver le redimensionnement
+    bool ai_enable_RGB_to_BGR;
     bool enable_denoising_;              // Activer/désactiver le débruitage
     unsigned int flash_duration_ms_;     // Durée du flash
     unsigned int pre_capture_delay_ms_;  // Délai avant capture

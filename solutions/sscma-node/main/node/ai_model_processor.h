@@ -19,8 +19,8 @@ public:
     bool isModelLoaded() const;
 
     // Prétraitement et exécution
-    ::cv::Mat preprocessImage(::cv::Mat& image, bool forceResize = false);
-    ma_err_t runDetection(::cv::Mat& image);
+    ::cv::Mat preprocessImage(::cv::Mat& image, bool forceResize = false, bool convertRgbToBgr = false);
+    ma_err_t runDetection(::cv::Mat& image, bool convertRgbToBgr);
 
     // Résultats et visualisation
     std::vector<ma_bbox_t> getDetectionResults() const;

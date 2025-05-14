@@ -54,14 +54,14 @@
         "xmin": 800,
         "ymin": 48,
         "xmax": 1920,
-        "ymax": 1169
+        "ymax": 1080
     },
     "barcode_config": {
-        "enabled": false,
-        "roi_xmin": 1000,
-        "roi_ymin": 440,
-        "roi_xmax": 1360,
-        "roi_ymax": 621
+        "enabled": true,
+        "roi_xmin": 90,
+        "roi_ymin": 580,
+        "roi_xmax": 954,
+        "roi_ymax": 620
     },
     "datamatrix_config": {
         "enabled": false,
@@ -78,6 +78,7 @@
     },
     "ai_config": {
         "enabled": true,
+        "enable_RGB_to_BGR_convertion": false,
         "model_path": "/userdata/MODEL/2025_05_09_yolo11n_1684x_int8_sym.cvimodel",
         "model_labels_path": "/userdata/MODEL/labels.json",
         "threshold": 0.5
