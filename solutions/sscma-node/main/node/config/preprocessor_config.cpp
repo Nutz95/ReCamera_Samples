@@ -1,4 +1,4 @@
-#include "preprocessor_config.h"
+#include "config/preprocessor_config.h"
 #include "FlowConfigReader.h"
 #include "logger.hpp"
 #include <fstream>
@@ -22,7 +22,7 @@ PreprocessorConfig readPreprocessorConfigFromFile(const std::string& nodeId, con
     bool fileLoaded      = false;
 
     for (const auto& path : possiblePaths) {
-        MA_LOGI(TAG, "Reading Preprocessor Configuration for node '%s': %s", nodeId.c_str(), path.c_str());
+        // MA_LOGI(TAG, "Reading Preprocessor Configuration for node '%s': %s", nodeId.c_str(), path.c_str());
         try {
             FlowConfigReader reader(path);
             if (reader.reload()) {
@@ -39,13 +39,13 @@ PreprocessorConfig readPreprocessorConfigFromFile(const std::string& nodeId, con
                 config.debug               = reader.getNodeConfigBool(nodeId, "debug", config.debug);
                 config.attach_channel      = reader.getNodeConfigString(nodeId, "attach_channel", config.attach_channel);
 
-                MA_LOGI(TAG,
+                /*MA_LOGI(TAG,
                         "Preprocessor configuration loaded for node '%s': save_raw=%s, enable_resize=%s, enable_denoising=%s, enable_ccw_rotation=%s",
                         nodeId.c_str(),
                         config.save_raw ? "true" : "false",
                         config.enable_resize ? "true" : "false",
                         config.enable_denoising ? "true" : "false",
-                        config.enable_ccw_rotation ? "true" : "false");
+                        config.enable_ccw_rotation ? "true" : "false");*/
 
                 break;
             }

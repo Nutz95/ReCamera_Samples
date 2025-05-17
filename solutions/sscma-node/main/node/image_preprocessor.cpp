@@ -371,7 +371,7 @@ ma_err_t ImagePreProcessorNode::onCreate(const json& config) {
 
     AIConfig aiCfg          = ma::readAIConfigFromFile();
     enable_ai_detection_    = aiCfg.enabled;
-    ai_enable_RGB_to_BGR    = aiCfg.enable_RGB_to_BGR_convertion;
+    ai_enable_BGR_to_RGB    = aiCfg.enable_BGR_to_RGB_convertion;
     ai_model_path_          = aiCfg.model_path;
     ai_model_labels_path_   = aiCfg.model_labels_path;
     ai_detection_threshold_ = aiCfg.threshold;
@@ -549,6 +549,14 @@ ma_err_t ImagePreProcessorNode::onStart() {
         return MA_OK;
     }
 
+    AIConfig aiCfg = ma::readAIConfigFromFile();
+    if (aiCfg.enable_bmp_inference_test_mode == true) {
+        started_ = true;
+        // Démarrer le thread de traitement sans démarer la camera
+        thread_->start(this);
+        return MA_OK;
+    }
+
     // --- TRACE ---
     MA_LOGI(TAG, "ImagePreProcessorNode.onStart: attaching to camera node %s", id_.c_str());
 
@@ -587,7 +595,6 @@ ma_err_t ImagePreProcessorNode::onStart() {
     // Démarrer le thread de traitement
     thread_->start(this);
 
-    MA_LOGI(TAG, "ImagePreProcessorNode.onStart: camera attached to channel %d, thread started", channel_);
     return MA_OK;
 }
 
@@ -617,16 +624,14 @@ ma_err_t ImagePreProcessorNode::onStop() {
 // Méthode pour la détection IA
 void ImagePreProcessorNode::performAIDetection(::cv::Mat& output_image) {
     Profiler p("ImagePreProcessorNode: performAIDetection");
-    MA_LOGI(TAG, "AI detection enabled. Performing detection...");
 
     // Convertir l'image en RGB si elle est en BGR (OpenCV utilise BGR par défaut)
     ::cv::Mat image = output_image.clone();
 
     MA_LOGI(TAG, "Running AI detection on image of size: %dx%d", image.cols, image.rows);
     // Exécuter la détection d'objets
-    ma_err_t ret = ai_processor_->runDetection(image, ai_enable_RGB_to_BGR);
+    ma_err_t ret = ai_processor_->runDetection(image, ai_enable_BGR_to_RGB);
     if (ret == MA_OK) {
-        MA_LOGI(TAG, "AI detection completed successfully");
         // Dessiner les résultats de détection sur l'image
         ai_processor_->drawDetectionResults(output_image);
 

@@ -8,9 +8,10 @@ namespace ma {
  * @brief Structure contenant les paramètres de configuration de la balance des blancs
  */
 struct WhiteBalanceConfig {
-    float red_balance_factor   = 1.0f;  // Facteur de balance pour le canal rouge
-    float green_balance_factor = 1.0f;  // Facteur de balance pour le canal vert
-    float blue_balance_factor  = 1.0f;  // Facteur de balance pour le canal bleu
+    bool enabled               = false;  // Indique si la balance des blancs est activée
+    float red_balance_factor   = 1.0f;   // Facteur de balance pour le canal rouge
+    float green_balance_factor = 1.0f;   // Facteur de balance pour le canal vert
+    float blue_balance_factor  = 1.0f;   // Facteur de balance pour le canal bleu
 };
 
 /**

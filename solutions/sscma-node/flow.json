@@ -78,9 +78,11 @@
     },
     "ai_config": {
         "enabled": true,
-        "enable_RGB_to_BGR_convertion": false,
-        "model_path": "/userdata/MODEL/2025_05_09_yolo11n_1684x_int8_sym.cvimodel",
+        "enable_BGR_to_RGB_convertion": true,
+        "model_path": "/userdata/MODEL/2025_05_17_yolo11n_cv181x_int8.cvimodel",
         "model_labels_path": "/userdata/MODEL/labels.json",
-        "threshold": 0.5
+        "threshold": 0.70,
+        "enable_bmp_inference_test_mode": false,
+        "bmp_inference_test_folder": "/userdata/IMAGES/TEST/inferenceTest/"
     }
 }

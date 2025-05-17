@@ -34,6 +34,15 @@
 		},
 		{
 			"path": "../../../../../.github"
+		},
+		{
+			"path": "../../../../../zxing-cpp"
+		},
+		{
+			"path": "../../../../../PAT"
+		},
+		{
+			"path": "../../../sscma-model"
 		}
 	],
 	"settings": {
@@ -129,7 +138,10 @@
 			"ranges": "cpp",
 			"scoped_allocator": "cpp",
 			"syncstream": "cpp",
-			"variant": "cpp"
+			"variant": "cpp",
+			"*.expression": "cpp",
+			"alignedvector3": "cpp",
+			"fft": "cpp"
 		}
 	}
 }

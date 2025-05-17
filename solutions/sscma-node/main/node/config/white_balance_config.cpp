@@ -22,7 +22,7 @@ WhiteBalanceConfig readWhiteBalanceConfigFromFile(const std::string& filename) {
     bool fileLoaded      = false;
 
     for (const auto& path : possiblePaths) {
-        MA_LOGI(TAG, "Reading White Balance Configuration: %s", path.c_str());
+        // MA_LOGI(TAG, "Reading White Balance Configuration: %s", path.c_str());
         try {
             FlowConfigReader reader(path);
             if (reader.reload()) {
@@ -30,12 +30,14 @@ WhiteBalanceConfig readWhiteBalanceConfigFromFile(const std::string& filename) {
                 fileLoaded = true;
 
                 // Lecture des paramètres au niveau racine comme pour crop_config
+                config.enabled              = reader.getRootConfigBool("white_balance_config", "enabled", false);
                 config.red_balance_factor   = reader.getRootConfigFloat("white_balance_config", "red_balance_factor", 1.0f);
                 config.green_balance_factor = reader.getRootConfigFloat("white_balance_config", "green_balance_factor", 1.0f);
                 config.blue_balance_factor  = reader.getRootConfigFloat("white_balance_config", "blue_balance_factor", 1.0f);
 
-                MA_LOGI(
-                    TAG, "White Balance parameters loaded from %s: red=%.3f, green=%.3f, blue=%.3f", path.c_str(), config.red_balance_factor, config.green_balance_factor, config.blue_balance_factor);
+                /*MA_LOGI(
+                    TAG, "White Balance parameters loaded from %s: red=%.3f, green=%.3f, blue=%.3f", path.c_str(), config.red_balance_factor, config.green_balance_factor,
+                   config.blue_balance_factor);*/
                 break;
             }
         } catch (const std::exception& e) {

@@ -113,22 +113,25 @@ bool AIModelProcessor::isModelLoaded() const {
         ow = reinterpret_cast<const ma_img_t*>(model_->getInput())->width;
     }
 
+    ::cv::Mat processedImage;
+    ::cv::cvtColor(image, processedImage, ::cv::COLOR_BGR2RGB);
+
     // Si l'image est déjà dans la bonne taille et n'a pas besoin d'être redimensionnée
     if (!forceResize && ih == oh && iw == ow) {
         // Vérifier si l'image est déjà au format RGB
-        ::cv::Mat processedImage;
+        ::cv::Mat processedImage2;
         if (image.channels() == 3) {
             ::cv::Mat channels[3];
             ::cv::split(image, channels);
 
             // Si le premier canal est B et le dernier canal est R, c'est du BGR (format OpenCV par défaut)
             if (convertRgbToBgr) {
-                ::cv::cvtColor(image, processedImage, ::cv::COLOR_BGR2RGB);
+                ::cv::cvtColor(processedImage, processedImage2, ::cv::COLOR_BGR2RGB);
                 MA_LOGI(TAG, "Image converted from BGR to RGB format");
             }
         } else {
             MA_LOGW(TAG, "Image has %d channels, expected 3 channels", image.channels());
-            processedImage = image.clone();
+            processedImage = processedImage.clone();
         }
         return processedImage;
     }
@@ -138,7 +141,7 @@ bool AIModelProcessor::isModelLoaded() const {
     double resize_scale = std::min((double)oh / ih, (double)ow / iw);
     int nh              = (int)(ih * resize_scale);
     int nw              = (int)(iw * resize_scale);
-    ::cv::resize(image, resizedImage, ::cv::Size(nw, nh));
+    ::cv::resize(processedImage, resizedImage, ::cv::Size(nw, nh));
 
     // Ajouter des bordures pour atteindre la taille requise
     int top    = (oh - nh) / 2;
@@ -220,7 +223,6 @@ std::vector<ma_bbox_t> AIModelProcessor::getDetectionResults() const {
 
 void AIModelProcessor::drawDetectionResults(::cv::Mat& image, bool convertBGR) {
     for (const auto& result : results_) {
-        Profiler p("AI: drawDetectionResults");
         // Calculer les coordonnées du rectangle (x1,y1,x2,y2)
         float x1 = (result.x - result.w / 2.0) * image.cols;
         float y1 = (result.y - result.h / 2.0) * image.rows;

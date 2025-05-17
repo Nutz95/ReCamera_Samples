@@ -22,7 +22,7 @@ CropConfig readCropConfigFromFile(const std::string& filename) {
     bool fileLoaded      = false;
 
     for (const auto& path : possiblePaths) {
-        MA_LOGI(TAG, "Reading Crop Configuration: %s", path.c_str());
+        // MA_LOGI(TAG, "Reading Crop Configuration: %s", path.c_str());
         try {
             FlowConfigReader reader(path);
             if (reader.reload()) {
@@ -36,14 +36,14 @@ CropConfig readCropConfigFromFile(const std::string& filename) {
                 config.xmax    = reader.getRootConfigInt("crop_config", "xmax", 0);
                 config.ymax    = reader.getRootConfigInt("crop_config", "ymax", 0);
 
-                MA_LOGI(TAG,
+                /*MA_LOGI(TAG,
                         "Crop parameters loaded from %s: enabled=%s, xmin=%d, ymin=%d, xmax=%d, ymax=%d",
                         path.c_str(),
                         config.enabled ? "true" : "false",
                         config.xmin,
                         config.ymin,
                         config.xmax,
-                        config.ymax);
+                        config.ymax);*/
                 break;
             }
         } catch (const std::exception& e) {

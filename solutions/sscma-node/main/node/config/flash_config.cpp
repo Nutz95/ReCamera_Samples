@@ -8,7 +8,7 @@ static constexpr char TAG[] = "ma::flash_config";
 
 FlashConfig readFlashConfigFromFile(const std::string& filename) {
     FlashConfig config;
-    MA_LOGI(TAG, "Reading Flash Configuration: %s", filename.c_str());
+    // MA_LOGI(TAG, "Reading Flash Configuration: %s", filename.c_str());
 
     try {
         std::ifstream flowifs(filename.c_str());
@@ -49,13 +49,13 @@ FlashConfig readFlashConfigFromFile(const std::string& filename) {
                         config.disable_red_led_blinking = flash_config["disable_red_led_blinking"];
                     }
 
-                    MA_LOGI(TAG,
+                    /* MA_LOGI(TAG,
                             "Paramètres du flash chargés: enabled:%s, pre=%d ms, duration=%d ms, intensity=%d, disable_red=%s",
                             config.enabled ? "true" : "false",
                             config.pre_capture_delay_ms,
                             config.flash_duration_ms,
                             config.flash_intensity,
-                            config.disable_red_led_blinking ? "true" : "false");
+                            config.disable_red_led_blinking ? "true" : "false");*/
                 } else {
                     MA_LOGE(TAG, "flash_config object not found or is not an object");
                 }

@@ -67,6 +67,9 @@ public:
     // Décode un datamatrix à partir d'une image de pleine résolution selon la config datamatrix_config
     std::string decodeDatamatrixFromFullResImage(const ::cv::Mat& fullres_image, bool save_roi_bmp, const std::string& tube_type, bool enable_denoising);
 
+    // Nouvelle méthode pour la détection IA
+    void performAIDetection(::cv::Mat& output_image);
+
 protected:
     void threadEntry();
     static void threadEntryStub(void* obj);
@@ -75,9 +78,6 @@ protected:
     bool fetchAndValidateFrame(videoFrame*& frame);
     void processCaptureRequest(videoFrame* frame, ma_tick_t& last_debug, std::string tubeType);
     void handleNoCaptureRequested(videoFrame* frame);
-
-    // Nouvelle méthode pour la détection IA
-    void performAIDetection(::cv::Mat& output_image);
 
 protected:
     int32_t output_width_;   // Largeur cible (640 par défaut)
@@ -100,7 +100,7 @@ protected:
 
     // Nouvelles variables pour les paramètres de traitement d'image
     bool enable_resize_;  // Activer/désactiver le redimensionnement
-    bool ai_enable_RGB_to_BGR;
+    bool ai_enable_BGR_to_RGB;
     bool enable_denoising_;              // Activer/désactiver le débruitage
     unsigned int flash_duration_ms_;     // Durée du flash
     unsigned int pre_capture_delay_ms_;  // Délai avant capture

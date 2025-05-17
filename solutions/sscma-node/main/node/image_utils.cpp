@@ -46,7 +46,6 @@ bool ImageUtils::saveImageToJpeg(const ::cv::Mat& image, const std::string& file
 
 // Fonction utilitaire pour appliquer la balance des blancs sur le canal bleu
 ::cv::Mat ImageUtils::whiteBalance(const ::cv::Mat& image_rgb, float red_factor, float green_factor, float blue_factor) {
-    Profiler p("whiteBalance");
     if (blue_factor == 1.0f && red_factor == 1.0f && green_factor == 1.0f) {
         // Aucun traitement, retourne l'image d'entrée directement
         return image_rgb;
@@ -83,17 +82,14 @@ bool ImageUtils::saveImageToBmp(const ::cv::Mat& image, const std::string& filep
             }
         }
     }
-    // Appliquer la balance des blancs sur le canal bleu
-    ::cv::Mat balanced_image = whiteBalance(image, red_factor, green_factor, blue_factor);
+
     ::cv::Mat brg_image;
-    ::cv::cvtColor(balanced_image, brg_image, ::cv::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
-    MA_LOGI(TAG, "Created Mat from RGB888 frame, applied white balance, and converted to BGR");
+    ::cv::cvtColor(image, brg_image, ::cv::COLOR_RGB2BGR);  // Convertir BGR à RGB pour BMP
     return ::cv::imwrite(filepath, brg_image);
 }
 
 // Fonction pour redimensionner une image à la taille cible avec des bandes noires
 ::cv::Mat ImageUtils::resizeImage(const ::cv::Mat& input_image, int target_width, int target_height) {
-    Profiler p("resizeImage");
     // Calculer le ratio pour le redimensionnement
     float scale_width  = static_cast<float>(target_width) / input_image.cols;
     float scale_height = static_cast<float>(target_height) / input_image.rows;
@@ -142,7 +138,6 @@ bool ImageUtils::saveImageToBmp(const ::cv::Mat& image, const std::string& filep
 
 // Nouvelle fonction utilitaire pour crop une région définie par xmin, ymin, xmax, ymax
 ::cv::Mat ImageUtils::cropImage(const ::cv::Mat& input_image, int xmin, int ymin, int xmax, int ymax) {
-    Profiler p("cropImage");
     // Ensure coordinates within bounds
     int x1 = std::max(0, xmin);
     int y1 = std::max(0, ymin);

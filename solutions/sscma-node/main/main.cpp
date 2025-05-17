@@ -41,6 +41,13 @@ extern "C" {
 #include <unistd.h>
 }
 
+#include "node/config/crop_config.h"
+#include "node/config/preprocessor_config.h"
+#include "node/config/white_balance_config.h"  // Ajout de l'include pour la nouvelle classe
+#include <cstring>
+#include <dirent.h>  // Pour DIR, opendir, readdir, closedir
+#include <sys/types.h>
+
 const std::string TAG = "sscma";
 
 using namespace ma;
@@ -195,7 +202,7 @@ ImagePreProcessorNode* findAndValidateImagePreProcessorNode(const std::string& c
 }
 
 // Function to auto-start nodes defined in flow.json
-void autoStartNodesFromConfig(const std::string& config_file, NodeServer* server) {
+void autoStartNodesFromConfig(const std::string& config_file, NodeServer* server, AIConfig* aiCfg) {
     std::ifstream flowifs(config_file.c_str());
     if (flowifs.good()) {
         json flow;
@@ -210,6 +217,12 @@ void autoStartNodesFromConfig(const std::string& config_file, NodeServer* server
                     }
                     std::string id   = elem["id"].get<std::string>();
                     std::string type = elem["type"].get<std::string>();
+                    // checks if aiCfg.enable_bmp_inference_test_mode==true, if so don't skip element with type == "camera"
+                    if (aiCfg->enable_bmp_inference_test_mode && type == "camera") {
+                        MA_LOGI(TAG, "Skipping node with type 'camera' in inference test mode.");
+                        continue;
+                    }
+
                     json cdata;
                     cdata["type"] = type;
                     if (elem.contains("config"))
@@ -402,22 +415,21 @@ std::string selectLabelInteractive(const ma::node::LabelMapper& labelMapper) {
 
 void performCapture(ImagePreProcessorNode* imagePreProcessor, std::string& selectedLabel) {
     capture_requested.store(true);
-    Thread::sleep(Tick::fromMilliseconds(2));
+    // Thread::sleep(Tick::fromMilliseconds(2));
     if (imagePreProcessor) {
         // enable frame capture from camera object
         imagePreProcessor->requestCapture(selectedLabel.c_str());
-        MA_LOGI(TAG, "Capture Requested");
+        // MA_LOGI(TAG, "Capture Requested");
         while (!imagePreProcessor->isCaptureDone()) {
-            Thread::sleep(Tick::fromMilliseconds(100));
+            Thread::sleep(Tick::fromMilliseconds(10));
         }
     }
 }
 
 // Fonction pour exécuter la boucle principale de l'application
-void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePreProcessor) {
+void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePreProcessor, AIConfig* aiCfg) {
     bool running                         = true;
-    AIConfig aiCfg                       = ma::readAIConfigFromFile();
-    ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg.model_labels_path.c_str());
+    ma::node::LabelMapper* label_mapper_ = new ma::node::LabelMapper(aiCfg->model_labels_path.c_str());
 
     while (running) {
         std::string selectedLabel = selectLabelInteractive(*label_mapper_);
@@ -454,6 +466,82 @@ void runMainLoop(const std::string& config_file, ImagePreProcessorNode* imagePre
     }
 
     delete label_mapper_;
+}
+
+// Fonction pour lister tous les fichiers .bmp dans un dossier donné
+std::vector<std::string> listBmpFilesInFolder(const std::string& folderPath) {
+    std::vector<std::string> bmpFiles;
+    DIR* dir = opendir(folderPath.c_str());
+    if (!dir) {
+        MA_LOGE(TAG, "Impossible d'ouvrir le dossier : %s", folderPath.c_str());
+        return bmpFiles;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        // Ignorer . et ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        std::string filename = entry->d_name;
+        // Vérifier l'extension .bmp (insensible à la casse)
+        if (filename.length() >= 4) {
+            std::string ext = filename.substr(filename.length() - 4);
+            for (auto& c : ext)
+                c = std::tolower(c);
+            if (ext == ".bmp") {
+                bmpFiles.push_back(folderPath + "/" + filename);
+            }
+        }
+    }
+    closedir(dir);
+    return bmpFiles;
+}
+
+void ApplyInferenceOnImages(ImagePreProcessorNode* imagePreProcessor, AIConfig* aiCfg) {
+    const std::string folderPath      = aiCfg->bmp_inference_test_folder;
+    std::vector<std::string> bmpFiles = listBmpFilesInFolder(folderPath);
+    MA_LOGI(TAG, "Found %zu BMP files in %s", bmpFiles.size(), folderPath.c_str());
+
+    ma::CropConfig cropCfg                 = ma::readCropConfigFromFile();
+    ma::PreprocessorConfig preprocessorCfg = ma::readPreprocessorConfigFromFile(imagePreProcessor->id());
+    ma::WhiteBalanceConfig wbConfig        = ma::readWhiteBalanceConfigFromFile();
+
+    for (const auto& bmpPath : bmpFiles) {
+        MA_LOGI(TAG, "Processing image: %s", bmpPath.c_str());
+        ::cv::Mat img = ::cv::imread(bmpPath, ::cv::IMREAD_COLOR);
+        if (img.empty()) {
+            MA_LOGW(TAG, "Failed to load image: %s", bmpPath.c_str());
+            continue;
+        }
+
+        ::cv::Mat cropped_image;
+        if (cropCfg.enabled) {
+            MA_LOGI(TAG, "Cropping enabled - Region [%d,%d] to [%d,%d]", cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+            cropped_image = ImageUtils::cropImage(img, cropCfg.xmin, cropCfg.ymin, cropCfg.xmax, cropCfg.ymax);
+        } else {
+            cropped_image = img.clone();
+        }
+
+        if (wbConfig.enabled) {
+            MA_LOGI(
+                TAG, "White balance enabled - applying white balance (red: %.2f, green: %.2f,blue: %.2f)", wbConfig.red_balance_factor, wbConfig.green_balance_factor, wbConfig.blue_balance_factor);
+            cropped_image = ImageUtils::whiteBalance(cropped_image, wbConfig.red_balance_factor, wbConfig.green_balance_factor, wbConfig.blue_balance_factor);
+        }
+
+        ::cv::Mat output_image;
+        if (preprocessorCfg.enable_resize) {
+            MA_LOGI(TAG, "Resizing enabled - applying resizing to %dx%d", 640, 640);
+            output_image = ImageUtils::resizeImage(cropped_image, 640, 640);
+        } else {
+            output_image = cropped_image.clone();
+        }
+
+
+        if (imagePreProcessor) {
+            imagePreProcessor->performAIDetection(output_image);
+        }
+    }
 }
 
 // Fonction pour démarrer le service principal
@@ -500,8 +588,10 @@ int startService(const std::string& config_file, bool daemon) {
     server.setStorage(config);  // Le serveur prend possession du pointeur config
     server.start(host, port, user, password);
 
+    AIConfig AiCfg = readAIConfigFromFile(config_file.c_str());
+
     // Démarrer automatiquement les noeuds définis dans flow.json
-    autoStartNodesFromConfig(config_file, &server);
+    autoStartNodesFromConfig(config_file, &server, &AiCfg);
 
     // Attendre un moment pour que tous les noeuds s'initialisent correctement
     Thread::sleep(Tick::fromSeconds(2));
@@ -517,7 +607,13 @@ int startService(const std::string& config_file, bool daemon) {
     }
 
     // Exécuter la boucle principale
-    runMainLoop(config_file, imagePreProcessor);
+
+    if (AiCfg.enable_bmp_inference_test_mode == true) {
+        MA_LOGI(TAG, "Debug Inference Mode!");
+        ApplyInferenceOnImages(imagePreProcessor, &AiCfg);
+    } else {
+        runMainLoop(config_file, imagePreProcessor, &AiCfg);
+    }
 
     // Fermer proprement l'application
     shutdownApplication(&server);  // Le serveur gère la suppression de config
